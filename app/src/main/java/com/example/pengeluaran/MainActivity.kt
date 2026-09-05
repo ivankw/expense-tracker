@@ -5,10 +5,15 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.CheckCircle
@@ -20,11 +25,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.pengeluaran.data.Expense
 import com.example.pengeluaran.util.ApkDownloader
 import com.example.pengeluaran.util.UpdateChecker
@@ -48,7 +56,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    MainScreen(viewModel)
+                    MainApp(viewModel)
                 }
             }
         }
@@ -57,23 +65,51 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(viewModel: ExpenseViewModel) {
+fun MainApp(viewModel: ExpenseViewModel) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    // 0 = Catat Transaksi (Kiri), 1 = Dashboard (Kanan)
-    var selectedTab by remember { mutableIntStateOf(0) }
+    // 0 = Tab Kiri (Catat Transaksi Pengeluaran), 1 = Tab Kanan (Dashboard / Spreadsheet)
+    var selectedTab by remember { mutableIntStateOf(1) }
 
     val expenseList by viewModel.expenses.collectAsState()
 
-    // State pengecekan update aplikasi
+    // State Update
     var updateResult by remember { mutableStateOf<UpdateResult?>(null) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showUpToDateDialog by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     val currentVersion = remember { UpdateChecker.getCurrentVersion(context) }
 
-    // Pengecekan otomatis saat aplikasi pertama kali dibuka
+    // State Budget / Income
+    var paycheckAmount by remember { mutableStateOf("4750000") }
+    var savingAmount by remember { mutableStateOf("4750000") }
+
+    val categories = listOf(
+        "Debt",
+        "Food",
+        "Gifts",
+        "Home",
+        "Transportation/gas",
+        "Electricity",
+        "Ecommerce",
+        "Investment"
+    )
+
+    // Budget rencana per kategori (Planned)
+    val plannedBudget = remember {
+        mutableStateMapOf(
+            "Debt" to 0.0,
+            "Food" to 658000.0,
+            "Gifts" to 0.0,
+            "Home" to 0.0,
+            "Transportation/gas" to 493500.0,
+            "Electricity" to 200000.0,
+            "Ecommerce" to 0.0,
+            "Investment" to 0.0
+        )
+    }
+
     LaunchedEffect(Unit) {
         val res = UpdateChecker.checkRelease(context)
         updateResult = res
@@ -87,7 +123,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Pencatat Keuangan", fontWeight = FontWeight.Bold)
+                        Text("Pencatat Keuangan", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                         Text("Versi: $currentVersion", style = MaterialTheme.typography.labelSmall)
                     }
                 },
@@ -96,7 +132,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
                 ),
                 actions = {
                     IconButton(onClick = { showMenu = !showMenu }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Menu Opsi")
+                        Icon(Icons.Default.MoreVert, contentDescription = "Menu")
                     }
                     DropdownMenu(
                         expanded = showMenu,
@@ -115,11 +151,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
                                         UpdateStatus.HAS_UPDATE -> showUpdateDialog = true
                                         UpdateStatus.UP_TO_DATE -> showUpToDateDialog = true
                                         UpdateStatus.ERROR -> {
-                                            Toast.makeText(
-                                                context,
-                                                "Error: ${res.errorMessage}",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                                            Toast.makeText(context, "Error: ${res.errorMessage}", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 }
@@ -131,14 +163,12 @@ fun MainScreen(viewModel: ExpenseViewModel) {
         },
         bottomBar = {
             NavigationBar {
-                // Menu Kiri
                 NavigationBarItem(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
                     icon = { Icon(Icons.Default.AddCircle, contentDescription = null) },
-                    label = { Text("Catat Transaksi") }
+                    label = { Text("Catat Pengeluaran") }
                 )
-                // Menu Kanan
                 NavigationBarItem(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
@@ -147,29 +177,36 @@ fun MainScreen(viewModel: ExpenseViewModel) {
                 )
             }
         }
-    ) { paddingValues ->
+    ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(padding)
         ) {
             if (selectedTab == 0) {
                 RecordExpenseTab(
-                    onSaveExpense = { title, amount, category ->
-                        viewModel.addExpense(title, amount, category)
-                        Toast.makeText(context, "Transaksi berhasil dicatat!", Toast.LENGTH_SHORT).show()
-                        selectedTab = 1 // Pindah otomatis ke Dashboard setelah menyimpan
+                    categoryList = categories,
+                    onSaveExpense = { title, amount, cat ->
+                        viewModel.addExpense(title, amount, cat)
+                        Toast.makeText(context, "Pengeluaran tersimpan!", Toast.LENGTH_SHORT).show()
+                        selectedTab = 1
                     }
                 )
             } else {
-                DashboardTab(
+                DashboardSpreadsheetTab(
+                    categories = categories,
                     expenses = expenseList,
-                    onDelete = { viewModel.deleteExpense(it) }
+                    paycheckAmount = paycheckAmount,
+                    onPaycheckChange = { paycheckAmount = it },
+                    savingAmount = savingAmount,
+                    onSavingChange = { savingAmount = it },
+                    plannedBudget = plannedBudget,
+                    onDeleteExpense = { viewModel.deleteExpense(it) }
                 )
             }
         }
 
-        // Dialog Pembaruan Tersedia
+        // Dialog Pembaruan Tersedia (Bebas requestCode)
         if (showUpdateDialog && updateResult != null) {
             AlertDialog(
                 onDismissRequest = { showUpdateDialog = false },
@@ -207,17 +244,11 @@ fun MainScreen(viewModel: ExpenseViewModel) {
             )
         }
 
-        // Dialog Versi Sudah Terbaru
+        // Dialog Versi Sudah Paling Baru
         if (showUpToDateDialog && updateResult != null) {
             AlertDialog(
                 onDismissRequest = { showUpToDateDialog = false },
-                icon = {
-                    Icon(
-                        Icons.Default.CheckCircle,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                },
+                icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 title = { Text("Versi app sudah paling baru.") },
                 text = {
                     Column {
@@ -236,28 +267,18 @@ fun MainScreen(viewModel: ExpenseViewModel) {
 }
 
 // -------------------------------------------------------------------------------------
-// 1. TAB SEBELAH KIRI: FORM CATAT TRANSAKSI
+// 1. TAB KIRI: CATAT TRANSAKSI
 // -------------------------------------------------------------------------------------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordExpenseTab(
+    categoryList: List<String>,
     onSaveExpense: (String, Double, String) -> Unit
 ) {
-    val categoryList = listOf(
-        "Debt",
-        "Food",
-        "Gifts",
-        "Home",
-        "Transportation/gas",
-        "Electricity",
-        "Ecommerce",
-        "Investment"
-    )
-
     var title by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf(categoryList[1]) } // Default: Food
-    var isCategoryExpanded by remember { mutableStateOf(false) }
+    var selectedCategory by remember { mutableStateOf(categoryList.firstOrNull() ?: "Food") }
+    var isExpanded by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -265,13 +286,8 @@ fun RecordExpenseTab(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text(
-            text = "Catat Pengeluaran Baru",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
-        )
+        Text("Catat Pengeluaran Baru", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
-        // Input Judul Pengeluaran
         OutlinedTextField(
             value = title,
             onValueChange = { title = it },
@@ -279,13 +295,10 @@ fun RecordExpenseTab(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Input Nominal (Numpad Angka Murni)
         OutlinedTextField(
             value = amount,
             onValueChange = { input ->
-                if (input.all { it.isDigit() }) {
-                    amount = input
-                }
+                if (input.all { it.isDigit() }) amount = input
             },
             label = { Text("Jumlah (Rp)") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
@@ -293,10 +306,9 @@ fun RecordExpenseTab(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Dropdown Pilihan Kategori
         ExposedDropdownMenuBox(
-            expanded = isCategoryExpanded,
-            onExpandedChange = { isCategoryExpanded = !isCategoryExpanded },
+            expanded = isExpanded,
+            onExpandedChange = { isExpanded = !isExpanded },
             modifier = Modifier.fillMaxWidth()
         ) {
             OutlinedTextField(
@@ -304,23 +316,19 @@ fun RecordExpenseTab(
                 onValueChange = {},
                 readOnly = true,
                 label = { Text("Kategori") },
-                trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryExpanded)
-                },
-                modifier = Modifier
-                    .menuAnchor()
-                    .fillMaxWidth()
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isExpanded) },
+                modifier = Modifier.menuAnchor().fillMaxWidth()
             )
             ExposedDropdownMenu(
-                expanded = isCategoryExpanded,
-                onDismissRequest = { isCategoryExpanded = false }
+                expanded = isExpanded,
+                onDismissRequest = { isExpanded = false }
             ) {
-                categoryList.forEach { categoryItem ->
+                categoryList.forEach { cat ->
                     DropdownMenuItem(
-                        text = { Text(categoryItem) },
+                        text = { Text(cat) },
                         onClick = {
-                            selectedCategory = categoryItem
-                            isCategoryExpanded = false
+                            selectedCategory = cat
+                            isExpanded = false
                         }
                     )
                 }
@@ -329,19 +337,16 @@ fun RecordExpenseTab(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Tombol Simpan
         Button(
             onClick = {
-                val parsedAmount = amount.toDoubleOrNull() ?: 0.0
-                if (title.isNotBlank() && parsedAmount > 0) {
-                    onSaveExpense(title, parsedAmount, selectedCategory)
+                val parsed = amount.toDoubleOrNull() ?: 0.0
+                if (title.isNotBlank() && parsed > 0) {
+                    onSaveExpense(title, parsed, selectedCategory)
                     title = ""
                     amount = ""
                 }
             },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp)
+            modifier = Modifier.fillMaxWidth().height(50.dp)
         ) {
             Text("Simpan Transaksi", fontWeight = FontWeight.Bold)
         }
@@ -349,107 +354,204 @@ fun RecordExpenseTab(
 }
 
 // -------------------------------------------------------------------------------------
-// 2. TAB SEBELAH KANAN: DASHBOARD
+// 2. TAB KANAN: DASHBOARD (PERSONAL EXPENSES TRACKER SPREADSHEET)
 // -------------------------------------------------------------------------------------
 @Composable
-fun DashboardTab(
+fun DashboardSpreadsheetTab(
+    categories: List<String>,
     expenses: List<Expense>,
-    onDelete: (Expense) -> Unit
+    paycheckAmount: String,
+    onPaycheckChange: (String) -> Unit,
+    savingAmount: String,
+    onSavingChange: (String) -> Unit,
+    plannedBudget: MutableMap<String, Double>,
+    onDeleteExpense: (Expense) -> Unit
 ) {
-    val totalExpense = expenses.sumOf { it.amount }
+    val totalActual = expenses.sumOf { it.amount }
+    val totalPlanned = plannedBudget.values.sum()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        // Kartu Ringkasan Total Pengeluaran
-        Card(
+        // Judul Header Tracker Oranye
+        Text(
+            text = "PERSONAL EXPENSES TRACKER",
+            color = Color(0xFFD35400),
+            fontWeight = FontWeight.Black,
+            fontSize = 20.sp,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+
+        // Section Income
+        Text("Income:", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text("Total Pengeluaran Keseluruhan", style = MaterialTheme.typography.labelMedium)
-                Spacer(modifier = Modifier.height(4.dp))
+            Text("Paycheck", fontWeight = FontWeight.Medium, modifier = Modifier.width(80.dp))
+            OutlinedTextField(
+                value = paycheckAmount,
+                onValueChange = { if (it.all { c -> c.isDigit() }) onPaycheckChange(it) },
+                prefix = { Text("Rp ", fontSize = 12.sp) },
+                modifier = Modifier.width(130.dp),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                singleLine = true
+            )
+            Column(horizontalAlignment = Alignment.End) {
+                Text("Saving", fontWeight = FontWeight.Medium, fontSize = 13.sp)
                 Text(
-                    text = formatRupiah(totalExpense),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
+                    formatRupiah(savingAmount.toDoubleOrNull() ?: 0.0),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
+        // Section Expenses (Planned vs Actual)
+        Text("Expenses:", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Planned ${formatRupiah(totalPlanned)}", fontSize = 13.sp, color = Color.DarkGray)
+            Text("Actual ${formatRupiah(totalActual)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB71C1C))
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Header Tabel Kategori
+        Text(
+            text = "Expenses Table",
+            color = Color(0xFFD35400),
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Header Grid
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFF0F0F0))
+                .padding(vertical = 6.dp, horizontal = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Category", fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.weight(1.5f))
+            Text("Planned", fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.weight(1.2f), textAlign = TextAlign.End)
+            Text("Actual", fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.weight(1.3f), textAlign = TextAlign.End)
+            Text("%", fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
+        }
+
+        // Rows Kategori
+        categories.forEach { cat ->
+            val actualCat = expenses.filter { it.category.equals(cat, ignoreCase = true) }.sumOf { it.amount }
+            val plannedCat = plannedBudget[cat] ?: 0.0
+            val percentage = if (actualCat > 0) 100 else 0
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(0.5.dp, Color(0xFFE0E0E0))
+                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(cat, fontSize = 12.sp, modifier = Modifier.weight(1.5f), fontWeight = FontWeight.Medium)
+                Text(formatRupiah(plannedCat), fontSize = 11.sp, modifier = Modifier.weight(1.2f), textAlign = TextAlign.End)
+                Text(
+                    if (actualCat > 0) formatRupiah(actualCat) else "-",
+                    fontSize = 11.sp,
+                    modifier = Modifier.weight(1.3f),
+                    textAlign = TextAlign.End,
+                    fontWeight = if (actualCat > 0) FontWeight.Bold else FontWeight.Normal,
+                    color = if (actualCat > 0) Color(0xFFB71C1C) else Color.Gray
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(0.8f)
+                        .padding(horizontal = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (percentage > 0) {
+                        Text(
+                            "$percentage%",
+                            fontSize = 10.sp,
+                            color = Color(0xFF1B5E20),
+                            modifier = Modifier
+                                .background(Color(0xFFC8E6C9), shape = RoundedCornerShape(4.dp))
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    } else {
+                        Text("-", fontSize = 11.sp, color = Color.Gray)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Histori Detail Transaksi
         Text(
             text = "Histori Transaksi (${expenses.size})",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            fontSize = 15.sp
         )
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         if (expenses.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Belum ada transaksi pengeluaran",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.outline
-                )
-            }
+            Text("Belum ada pengeluaran yang dicatat.", fontSize = 12.sp, color = Color.Gray)
         } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f)
-            ) {
-                items(expenses, key = { it.id }) { item ->
-                    ExpenseItem(expense = item, onDelete = { onDelete(item) })
+            expenses.forEach { item ->
+                ExpenseItemRow(expense = item, onDelete = { onDeleteExpense(item) })
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun ExpenseItemRow(expense: Expense, onDelete: () -> Unit) {
+    val dateString = SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(expense.date))
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(10.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(expense.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("${expense.category} • $dateString", fontSize = 11.sp, color = Color.Gray)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    formatRupiah(expense.amount),
+                    color = Color(0xFFD32F2F),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Delete, contentDescription = "Hapus", modifier = Modifier.size(18.dp))
                 }
             }
         }
     }
 }
 
-// Komponen Item Transaksi
-@Composable
-fun ExpenseItem(expense: Expense, onDelete: () -> Unit) {
-    val dateString = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(expense.date))
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .padding(14.dp)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(expense.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
-                Text("${expense.category} • $dateString", style = MaterialTheme.typography.bodySmall)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = formatRupiah(expense.amount),
-                    color = MaterialTheme.colorScheme.error,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Hapus Transaksi")
-            }
-        }
-    }
-}
-
-// Formatter Rupiah ("Rp 7.000")
+// Format Rupiah tanpa sen
 fun formatRupiah(number: Double): String {
     val symbols = DecimalFormatSymbols(Locale("in", "ID")).apply {
         currencySymbol = "Rp "
