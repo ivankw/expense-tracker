@@ -22,14 +22,14 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     val incomeFlow: StateFlow<Double> = budgetPreferences.incomeFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-    fun addExpense(title: String, amount: Double, category: String) {
+    fun addExpense(title: String, amount: Double, category: String, dateMillis: Long = System.currentTimeMillis()) {
         viewModelScope.launch {
             expenseDao.insertExpense(
                 Expense(
                     title = title,
                     amount = amount,
                     category = category,
-                    date = System.currentTimeMillis()
+                    date = dateMillis
                 )
             )
         }
