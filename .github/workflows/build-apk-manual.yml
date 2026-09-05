@@ -39,7 +39,6 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      # 1. Generate versi otomatis berdasarkan run_number
       - name: Generate Dynamic Version
         id: versioning
         run: |
@@ -51,16 +50,11 @@ jobs:
           echo "version_tag=$VERSION_TAG" >> $GITHUB_OUTPUT
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
 
-      # 2. Membuat keystore statis agar tanda tangan APK selalu identik di setiap build
-      # Generate keystore dengan seed tetap di home directory runner
-      - name: Generate static release keystore
+      # Mengembalikan file release.keystore yang sama persis di setiap build
+      - name: Restore static keystore
         run: |
-          keytool -genkey -v -keystore ~/release.keystore \
-            -alias releasealias -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass password123 -keypass password123 \
-            -dname "CN=ExpenseApp, OU=Mobile, O=App, L=Jakarta, ST=Jakarta, C=ID"
+          base64 -d release.keystore.base64 > release.keystore
 
-      # 3. Build APK dengan menyuntikkan versi dinamis
       - name: Build APK with Dynamic Version
         run: |
           TYPE="${{ inputs.build_type }}"
@@ -73,7 +67,6 @@ jobs:
             -PcustomVersionCode=${{ steps.versioning.outputs.version_code }} \
             -PcustomVersionName=${{ steps.versioning.outputs.version_name }}
 
-      # 4. Ubah nama output APK
       - name: Rename APK Output
         id: rename_apk
         run: |
@@ -87,7 +80,6 @@ jobs:
           mv "$APK_SRC" "$APK_DEST"
           echo "apk_path=$APK_DEST" >> $GITHUB_OUTPUT
 
-      # 5. Publikasikan rilis ke GitHub Releases
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
