@@ -68,8 +68,8 @@ class MainActivity : ComponentActivity() {
 fun ExpenseScreen(viewModel: ExpenseViewModel) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val budgetPrefs = remember { com.example.pengeluaran.data.BudgetPreferences(context) }
 
-    // Daftar Kategori lengkap dengan Traveling
     val categoryList = remember {
         listOf(
             "Debt",
@@ -82,6 +82,48 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
             "Investment",
             "Traveling"
         )
+    }
+
+    // State transaksi
+    val expenseList by viewModel.expenses.collectAsState()
+    var title by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf(categoryList[1]) }
+    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
+
+    // State Budget Tersimpan
+    var paycheckInput by remember { mutableStateOf("4000000") }
+    val plannedBudgets = remember { mutableStateMapOf<String, String>() }
+
+    // Baca data tersimpan saat pertama kali dibuka
+    LaunchedEffect(Unit) {
+        // Ambil Paycheck tersimpan
+        budgetPrefs.paycheckFlow.collect { savedPaycheck ->
+            paycheckInput = savedPaycheck.toLong().toString()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        categoryList.forEach { cat ->
+            val defaultVal = when (cat) {
+                "Debt" -> 2000000.0
+                "Food" -> 658000.0
+                "Transportation/gas" -> 493500.0
+                "Electricity" -> 200000.0
+                else -> 0.0
+            }
+            budgetPrefs.getPlannedBudgetFlow(cat, defaultVal).collect { savedAmount ->
+                plannedBudgets[cat] = savedAmount.toLong().toString()
+            }
+        }
+    }
+
+    // Kalkulasi Angka
+    val paycheck = paycheckInput.toDoubleOrNull() ?: 0.0
+    val totalPlanned = categoryList.sumOf { plannedBudgets[it]?.toDoubleOrNull() ?: 0.0 }
+    val totalActual = expenseList.sumOf { it.amount }
+    val totalSaving = paycheck - totalActual
+    val totalRemain = totalPlanned - totalActual
     }
 
     // State untuk form input transaksi
