@@ -233,6 +233,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
 fun RecordExpenseTab(
     onSaveExpense: (String, Double, String) -> Unit
 ) {
+    val context = LocalContext.current
     val categoryList = listOf(
         "Debt",
         "Food",
@@ -264,7 +265,6 @@ fun RecordExpenseTab(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Input Jumlah dengan live separator pemisah ribuan
         OutlinedTextField(
             value = amount,
             onValueChange = { input ->
@@ -316,8 +316,12 @@ fun RecordExpenseTab(
         Button(
             onClick = {
                 val parsedAmount = amount.toDoubleOrNull() ?: 0.0
-                if (title.isNotBlank() && parsedAmount > 0) {
-                    onSaveExpense(title, parsedAmount, selectedCategory)
+                if (title.isBlank()) {
+                    Toast.makeText(context, "Nama pengeluaran tidak boleh kosong!", Toast.LENGTH_SHORT).show()
+                } else if (parsedAmount <= 0) {
+                    Toast.makeText(context, "Nominal pengeluaran harus lebih dari 0!", Toast.LENGTH_SHORT).show()
+                } else {
+                    onSaveExpense(title.trim(), parsedAmount, selectedCategory)
                     title = ""
                     amount = ""
                 }
@@ -343,6 +347,7 @@ fun DashboardTab(
 
     var showIncomeDialog by remember { mutableStateOf(false) }
     var incomeInput by remember { mutableStateOf("") }
+    var expenseToDelete by remember { mutableStateOf<Expense?>(null) }
 
     Column(
         modifier = Modifier
@@ -413,11 +418,39 @@ fun DashboardTab(
                     .weight(1f)
             ) {
                 items(expenses, key = { it.id }) { item ->
-                    ExpenseItem(expense = item, onDelete = { onDelete(item) })
+                    ExpenseItem(expense = item, onDelete = { expenseToDelete = item })
                 }
             }
         }
 
+        // Dialog Konfirmasi Hapus Transaksi
+        if (expenseToDelete != null) {
+            AlertDialog(
+                onDismissRequest = { expenseToDelete = null },
+                title = { Text("Hapus Transaksi?") },
+                text = {
+                    Text("Apakah Anda yakin ingin menghapus '${expenseToDelete?.title}' sebesar ${formatRupiah(expenseToDelete?.amount ?: 0.0)}?")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            expenseToDelete?.let { onDelete(it) }
+                            expenseToDelete = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Hapus")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { expenseToDelete = null }) {
+                        Text("Batal")
+                    }
+                }
+            )
+        }
+
+        // Dialog Pengaturan Gaji / Pemasukan
         if (showIncomeDialog) {
             AlertDialog(
                 onDismissRequest = { showIncomeDialog = false },
@@ -482,7 +515,6 @@ fun ExpenseItem(expense: Expense, onDelete: () -> Unit) {
     }
 }
 
-// Visual Transformation untuk pemisah ribuan otomatis (10000 -> 10.000)
 class ThousandsSeparatorVisualTransformation : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         val raw = text.text
@@ -527,7 +559,6 @@ class ThousandsSeparatorVisualTransformation : VisualTransformation {
     }
 }
 
-// Format tampilan saldo: "Rp 7.000" tanpa ",00"
 fun formatRupiah(number: Double): String {
     val symbols = DecimalFormatSymbols(Locale("in", "ID")).apply {
         currencySymbol = "Rp "
