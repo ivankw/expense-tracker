@@ -1,6 +1,7 @@
 package com.example.pengeluaran.data
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -22,6 +23,7 @@ class BudgetPreferences(private val context: Context) {
     companion object {
         val INCOME_KEY = doublePreferencesKey("user_income")
         val THEME_MODE_KEY = stringPreferencesKey("app_theme_mode")
+        val BIOMETRIC_ENABLED_KEY = booleanPreferencesKey("biometric_enabled")
     }
 
     val incomeFlow: Flow<Double> = context.dataStore.data.map { preferences ->
@@ -46,6 +48,16 @@ class BudgetPreferences(private val context: Context) {
     suspend fun saveThemeMode(mode: AppThemeMode) {
         context.dataStore.edit { preferences ->
             preferences[THEME_MODE_KEY] = mode.name
+        }
+    }
+
+    val biometricEnabledFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[BIOMETRIC_ENABLED_KEY] ?: false
+    }
+
+    suspend fun saveBiometricEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[BIOMETRIC_ENABLED_KEY] = enabled
         }
     }
 }
