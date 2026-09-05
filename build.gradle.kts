@@ -30,4 +30,9 @@ dependencies {
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     kapt("androidx.room:room-compiler:$roomVersion")
+
+    // OkHttp untuk HTTP request ringan
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Coroutine support (sudah bawaan Compose)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
 }
