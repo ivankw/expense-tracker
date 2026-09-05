@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version_tag:
-        description: 'Tag Versi Release (misal: v1.0.0 atau build-1)'
+        description: 'Tag Versi Release (misal: v1.0.0)'
         required: true
         default: 'v1.0.0'
       build_type:
@@ -21,7 +21,6 @@ on:
         default: false
         type: boolean
 
-# Wajib: Berikan izin menulis ke konten repositori untuk membuat Release
 permissions:
   contents: write
 
@@ -40,8 +39,11 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      # Memperbaiki line-ending CRLF ke LF dan memberi izin eksekusi
+      - name: Fix line endings and chmod gradlew
+        run: |
+          sed -i 's/\r$//' gradlew
+          chmod +x gradlew
 
       - name: Build Debug APK
         if: ${{ inputs.build_type == 'debug' }}
@@ -51,32 +53,22 @@ jobs:
         if: ${{ inputs.build_type == 'release' }}
         run: ./gradlew assembleRelease
 
-      # Mengganti nama APK agar rapi saat diunggah ke Releases
       - name: Rename APK Output
         id: rename_apk
         run: |
           VERSION="${{ inputs.version_tag }}"
           TYPE="${{ inputs.build_type }}"
           DIR="app/build/outputs/apk/${TYPE}"
-          
-          # Cari file APK pertama di direktori output
           APK_SRC=$(ls ${DIR}/*.apk | head -n 1)
           APK_DEST="${DIR}/ExpenseTracker-${TYPE}-${VERSION}.apk"
-          
           mv "$APK_SRC" "$APK_DEST"
           echo "apk_path=$APK_DEST" >> $GITHUB_OUTPUT
 
-      # Upload ke GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.version_tag }}
           name: "Release ${{ inputs.version_tag }}"
-          body: |
-            ## Pembaruan Aplikasi
-            - Tipe Build: **${{ inputs.build_type }}**
-            - Versi/Tag: **${{ inputs.version_tag }}**
-            - Tanggal Build: ${{ github.event.repository.updated_at }}
           draft: false
           prerelease: ${{ inputs.is_prerelease }}
           files: ${{ steps.rename_apk.outputs.apk_path }}
