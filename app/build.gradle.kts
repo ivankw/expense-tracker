@@ -12,10 +12,8 @@ android {
         applicationId = "com.example.pengeluaran"
         minSdk = 31
         targetSdk = 34
-        versionCode = 1 // <-- NAIKKAN JADI 2, 3, DST SETIAP RILIS BARU
-        versionName = "1.0.0" // <-- SESUAIKAN DENGAN TAG RELEASE
-        // ...
-    }
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -30,7 +28,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Menggunakan signing debug agar APK release otomatis ter-sign dan bisa diinstal
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -60,12 +57,11 @@ android {
 }
 
 dependencies {
-    // Core Android & Lifecycle
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
 
-    // Jetpack Compose UI
+    // Jetpack Compose
     val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
@@ -81,7 +77,7 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     kapt("androidx.room:room-compiler:$roomVersion")
 
-    // Network & HTTP Client (Untuk Cek Update GitHub)
+    // Network (OkHttp)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
 }
