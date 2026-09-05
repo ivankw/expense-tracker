@@ -22,8 +22,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.pengeluaran.data.Expense
@@ -261,16 +264,17 @@ fun RecordExpenseTab(
             modifier = Modifier.fillMaxWidth()
         )
 
+        // Input Jumlah dengan live separator pemisah ribuan
         OutlinedTextField(
             value = amount,
             onValueChange = { input ->
-                if (input.all { it.isDigit() }) {
+                if (input.length <= 12 && input.all { it.isDigit() }) {
                     amount = input
                 }
             },
             label = { Text("Jumlah (Rp)") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-            visualTransformation = VisualTransformation.None,
+            visualTransformation = ThousandsSeparatorVisualTransformation(),
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -368,7 +372,7 @@ fun DashboardTab(
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
-                Divider()
+                HorizontalDivider()
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
@@ -421,9 +425,10 @@ fun DashboardTab(
                 text = {
                     OutlinedTextField(
                         value = incomeInput,
-                        onValueChange = { if (it.all { char -> char.isDigit() }) incomeInput = it },
+                        onValueChange = { if (it.length <= 12 && it.all { char -> char.isDigit() }) incomeInput = it },
                         label = { Text("Nominal Gaji (Rp)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        visualTransformation = ThousandsSeparatorVisualTransformation()
                     )
                 },
                 confirmButton = {
@@ -477,6 +482,52 @@ fun ExpenseItem(expense: Expense, onDelete: () -> Unit) {
     }
 }
 
+// Visual Transformation untuk pemisah ribuan otomatis (10000 -> 10.000)
+class ThousandsSeparatorVisualTransformation : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val raw = text.text
+        if (raw.isEmpty()) return TransformedText(text, OffsetMapping.Identity)
+
+        val out = StringBuilder()
+        val n = raw.length
+        val originalToTransformed = IntArray(n + 1)
+
+        originalToTransformed[0] = 0
+        for (i in 0 until n) {
+            if (i > 0 && (n - i) % 3 == 0) {
+                out.append('.')
+            }
+            out.append(raw[i])
+            originalToTransformed[i + 1] = out.length
+        }
+
+        val transformedLen = out.length
+        val transformedToOriginal = IntArray(transformedLen + 1)
+        for (i in 0..n) {
+            val transOffset = originalToTransformed[i]
+            if (transOffset in 0..transformedLen) {
+                transformedToOriginal[transOffset] = i
+            }
+        }
+        for (j in 1..transformedLen) {
+            if (transformedToOriginal[j] == 0 && j > 0) {
+                transformedToOriginal[j] = transformedToOriginal[j - 1]
+            }
+        }
+
+        val offsetMapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int =
+                originalToTransformed[offset.coerceIn(0, n)]
+
+            override fun transformedToOriginal(offset: Int): Int =
+                transformedToOriginal[offset.coerceIn(0, transformedLen)]
+        }
+
+        return TransformedText(AnnotatedString(out.toString()), offsetMapping)
+    }
+}
+
+// Format tampilan saldo: "Rp 7.000" tanpa ",00"
 fun formatRupiah(number: Double): String {
     val symbols = DecimalFormatSymbols(Locale("in", "ID")).apply {
         currencySymbol = "Rp "
