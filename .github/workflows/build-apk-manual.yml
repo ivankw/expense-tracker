@@ -39,7 +39,7 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      # Format versi: versionCode = run_number, versionName = 1.0.<run_number>
+      # 1. Generate versi otomatis berdasarkan run_number
       - name: Generate Dynamic Version
         id: versioning
         run: |
@@ -51,7 +51,16 @@ jobs:
           echo "version_tag=$VERSION_TAG" >> $GITHUB_OUTPUT
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
 
-      # Build dengan menyuntikkan versi langsung via properti Gradle (-P)
+      # 2. Membuat keystore statis agar tanda tangan APK selalu identik di setiap build
+      - name: Generate static debug keystore
+        run: |
+          mkdir -p ~/.android
+          keytool -genkey -v -keystore ~/.android/debug.keystore \
+            -storepass android -alias androiddebugkey -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      # 3. Build APK dengan menyuntikkan versi dinamis
       - name: Build APK with Dynamic Version
         run: |
           TYPE="${{ inputs.build_type }}"
@@ -64,7 +73,7 @@ jobs:
             -PcustomVersionCode=${{ steps.versioning.outputs.version_code }} \
             -PcustomVersionName=${{ steps.versioning.outputs.version_name }}
 
-      # Mengubah nama file APK agar memuat versi rilis
+      # 4. Ubah nama output APK
       - name: Rename APK Output
         id: rename_apk
         run: |
@@ -78,7 +87,7 @@ jobs:
           mv "$APK_SRC" "$APK_DEST"
           echo "apk_path=$APK_DEST" >> $GITHUB_OUTPUT
 
-      # Buat GitHub Release dan lampirkan file APK secara otomatis
+      # 5. Publikasikan rilis ke GitHub Releases
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -89,7 +98,6 @@ jobs:
             - **Versi Aplikasi:** `${{ steps.versioning.outputs.version_name }}`
             - **Version Code:** `${{ steps.versioning.outputs.version_code }}`
             - **Tipe Build:** `${{ inputs.build_type }}`
-            - **Trigger Date:** ${{ github.event.repository.updated_at }}
           draft: false
           prerelease: ${{ inputs.is_prerelease }}
           files: ${{ steps.rename_apk.outputs.apk_path }}
