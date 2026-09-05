@@ -13,7 +13,6 @@ android {
         minSdk = 31
         targetSdk = 34
 
-        // Mengambil versi dinamis dari CI/CD GitHub Actions
         val passedVersionCode = project.findProperty("customVersionCode")?.toString()?.toIntOrNull() ?: 1
         val passedVersionName = project.findProperty("customVersionName")?.toString() ?: "1.0.0"
 
@@ -95,6 +94,9 @@ dependencies {
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     kapt("androidx.room:room-compiler:$roomVersion")
+
+    // DataStore Preferences (Solusi Error Unresolved reference: datastore)
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
 
     // Network (OkHttp) & Coroutines
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
