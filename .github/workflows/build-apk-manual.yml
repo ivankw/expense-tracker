@@ -50,10 +50,20 @@ jobs:
           echo "version_tag=$VERSION_TAG" >> $GITHUB_OUTPUT
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
 
-      # Mengembalikan file release.keystore yang sama persis di setiap build
-      - name: Restore static keystore
+      # Generate keystore PKCS12 valid langsung di root project agar terhindar dari file base64 korup
+      - name: Create valid release keystore
         run: |
-          base64 -d release.keystore.base64 > release.keystore
+          rm -f release.keystore
+          keytool -genkeypair -v \
+            -keystore release.keystore \
+            -alias mykey \
+            -storetype PKCS12 \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass password123 \
+            -keypass password123 \
+            -dname "CN=ExpenseTracker, OU=Mobile, O=Apps, L=Jakarta, ST=Jakarta, C=ID"
 
       - name: Build APK with Dynamic Version
         run: |
