@@ -21,7 +21,7 @@ object ApkDownloader {
     fun downloadAndInstall(context: Context, downloadUrl: String, fileName: String = "update.apk") {
         val appContext = context.applicationContext
 
-        // Buka pengaturan Unknown Sources jika belum diizinkan (bebas requestCode)
+        // Cek izin instalasi aplikasi tidak dikenal untuk Android 8.0 (API 26) ke atas
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (!appContext.packageManager.canRequestPackageInstalls()) {
                 Toast.makeText(
@@ -39,6 +39,7 @@ object ApkDownloader {
             }
         }
 
+        // Tentukan lokasi file unduhan di direktori Download internal aplikasi
         val destinationFile = File(
             appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
             fileName
@@ -89,6 +90,32 @@ object ApkDownloader {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             appContext.registerReceiver(onCompleteReceiver, filter, Context.RECEIVER_EXPORTED)
         } else {
-            appContext.registerReceiver(onCompleteReceiver,Sesi percakapan kita sebelumnya belum tersambung ke obrolan ini, sehingga saya belum bisa melihat kode, dokumen, atau topik spesifik apa yang terakhir kali kita kerjakan bersama.
+            appContext.registerReceiver(onCompleteReceiver, filter)
+        }
+    }
 
-Bisa tolong sebutkan judul proyek, topik, atau cuplikan bagian yang sedang kita garap? Saya akan langsung melanjutkan dan memberikan versi terbarunya.
+    private fun installApk(context: Context, apkFile: File) {
+        if (!apkFile.exists()) {
+            Toast.makeText(context, "File APK tidak ditemukan", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        try {
+            val apkUri: Uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                apkFile
+            )
+
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            context.startActivity(installIntent)
+        } catch (e: Exception) {
+            Toast.makeText(context, "Gagal membuka installer: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+}
