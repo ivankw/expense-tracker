@@ -19,27 +19,29 @@ object ApkDownloader {
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     fun downloadAndInstall(context: Context, downloadUrl: String, fileName: String = "update.apk") {
-        // Cek izin instal aplikasi tak dikenal di Android 8.0+
+        val appContext = context.applicationContext
+
+        // Cek izin instalasi Unknown Sources untuk Android 8+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (!context.packageManager.canRequestPackageInstalls()) {
+            if (!appContext.packageManager.canRequestPackageInstalls()) {
                 Toast.makeText(
-                    context,
+                    appContext,
                     "Izinkan penginstalan aplikasi dari sumber ini terlebih dahulu",
                     Toast.LENGTH_LONG
                 ).show()
 
-                // Gunakan startActivity biasa tanpa requestCode agar tidak terkena limit 16-bit
-                val permissionIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                    data = Uri.parse("package:${context.packageName}")
+                // Gunakan intent murni New Task tanpa requestCode
+                val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    data = Uri.parse("package:${appContext.packageName}")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                context.startActivity(permissionIntent)
+                appContext.startActivity(settingsIntent)
                 return
             }
         }
 
         val destinationFile = File(
-            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
+            appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
             fileName
         )
 
@@ -49,22 +51,22 @@ object ApkDownloader {
 
         val request = DownloadManager.Request(Uri.parse(downloadUrl))
             .setTitle("Mengunduh Pembaruan")
-            .setDescription("Sedang mengunduh file update...")
+            .setDescription("Sedang mengunduh file APK...")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setDestinationUri(Uri.fromFile(destinationFile))
             .setMimeType("application/vnd.android.package-archive")
 
-        val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        val downloadManager = appContext.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val downloadId = downloadManager.enqueue(request)
 
-        Toast.makeText(context, "Mulai mengunduh file update...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(appContext, "Mulai mengunduh file update...", Toast.LENGTH_SHORT).show()
 
         val onCompleteReceiver = object : BroadcastReceiver() {
             override fun onReceive(recvContext: Context?, intent: Intent?) {
-                val id = intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
+                val id = intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L) ?: -1L
                 if (id == downloadId) {
                     try {
-                        context.unregisterReceiver(this)
+                        appContext.unregisterReceiver(this)
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
@@ -72,11 +74,11 @@ object ApkDownloader {
                     val query = DownloadManager.Query().setFilterById(downloadId)
                     val cursor: Cursor = downloadManager.query(query)
                     if (cursor.moveToFirst()) {
-                        val columnIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                        if (cursor.getInt(columnIndex) == DownloadManager.STATUS_SUCCESSFUL) {
-                            installApk(context, destinationFile)
+                        val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                        if (statusIndex != -1 && cursor.getInt(statusIndex) == DownloadManager.STATUS_SUCCESSFUL) {
+                            installApk(appContext, destinationFile)
                         } else {
-                            Toast.makeText(context, "Gagal mengunduh file APK.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(appContext, "Gagal mengunduh APK.", Toast.LENGTH_SHORT).show()
                         }
                     }
                     cursor.close()
@@ -84,11 +86,11 @@ object ApkDownloader {
             }
         }
 
-        val intentFilter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+        val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(onCompleteReceiver, intentFilter, Context.RECEIVER_EXPORTED)
+            appContext.registerReceiver(onCompleteReceiver, filter, Context.RECEIVER_EXPORTED)
         } else {
-            context.registerReceiver(onCompleteReceiver, intentFilter)
+            appContext.registerReceiver(onCompleteReceiver, filter)
         }
     }
 
@@ -98,19 +100,19 @@ object ApkDownloader {
             return
         }
 
-        val apkUri: Uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.provider",
-            apkFile
-        )
-
-        val installIntent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(apkUri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-
         try {
+            val apkUri: Uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                apkFile
+            )
+
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
             context.startActivity(installIntent)
         } catch (e: Exception) {
             Toast.makeText(context, "Gagal membuka installer: ${e.message}", Toast.LENGTH_LONG).show()
