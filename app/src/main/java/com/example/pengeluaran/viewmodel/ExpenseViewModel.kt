@@ -34,6 +34,15 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     val themeModeFlow: StateFlow<AppThemeMode> = budgetPreferences.themeModeFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppThemeMode.SYSTEM)
 
+    val biometricEnabledFlow: StateFlow<Boolean> = budgetPreferences.biometricEnabledFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun setBiometricEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            budgetPreferences.saveBiometricEnabled(enabled)
+        }
+    }
+
     fun setThemeMode(mode: AppThemeMode) {
         viewModelScope.launch {
             budgetPreferences.saveThemeMode(mode)
