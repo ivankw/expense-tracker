@@ -37,21 +37,19 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
 
-      # Memperbaiki line-ending CRLF ke LF dan memberi izin eksekusi
-      - name: Fix line endings and chmod gradlew
-        run: |
-          sed -i 's/\r$//' gradlew
-          chmod +x gradlew
+      # Mengunduh Gradle resmi yang bersih langsung di server GitHub Actions
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
 
+      # Menggunakan perintah 'gradle' langsung (bukan ./gradlew)
       - name: Build Debug APK
         if: ${{ inputs.build_type == 'debug' }}
-        run: ./gradlew assembleDebug
+        run: gradle assembleDebug
 
       - name: Build Release APK
         if: ${{ inputs.build_type == 'release' }}
-        run: ./gradlew assembleRelease
+        run: gradle assembleRelease
 
       - name: Rename APK Output
         id: rename_apk
