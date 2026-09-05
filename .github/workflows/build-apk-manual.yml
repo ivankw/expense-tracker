@@ -1,8 +1,12 @@
-name: Manual Build APK
+name: Manual Build APK & Release
 
 on:
   workflow_dispatch:
     inputs:
+      version_tag:
+        description: 'Tag Versi Release (misal: v1.0.0 atau build-1)'
+        required: true
+        default: 'v1.0.0'
       build_type:
         description: 'Tipe build APK'
         required: true
@@ -11,9 +15,18 @@ on:
         options:
           - debug
           - release
+      is_prerelease:
+        description: 'Tandai sebagai Pre-release?'
+        required: true
+        default: false
+        type: boolean
+
+# Wajib: Berikan izin menulis ke konten repositori untuk membuat Release
+permissions:
+  contents: write
 
 jobs:
-  build:
+  build-and-release:
     runs-on: ubuntu-latest
 
     steps:
@@ -38,8 +51,34 @@ jobs:
         if: ${{ inputs.build_type == 'release' }}
         run: ./gradlew assembleRelease
 
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
+      # Mengganti nama APK agar rapi saat diunggah ke Releases
+      - name: Rename APK Output
+        id: rename_apk
+        run: |
+          VERSION="${{ inputs.version_tag }}"
+          TYPE="${{ inputs.build_type }}"
+          DIR="app/build/outputs/apk/${TYPE}"
+          
+          # Cari file APK pertama di direktori output
+          APK_SRC=$(ls ${DIR}/*.apk | head -n 1)
+          APK_DEST="${DIR}/ExpenseTracker-${TYPE}-${VERSION}.apk"
+          
+          mv "$APK_SRC" "$APK_DEST"
+          echo "apk_path=$APK_DEST" >> $GITHUB_OUTPUT
+
+      # Upload ke GitHub Release
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: app-${{ inputs.build_type }}
-          path: app/build/outputs/apk/${{ inputs.build_type }}/*.apk
+          tag_name: ${{ inputs.version_tag }}
+          name: "Release ${{ inputs.version_tag }}"
+          body: |
+            ## Pembaruan Aplikasi
+            - Tipe Build: **${{ inputs.build_type }}**
+            - Versi/Tag: **${{ inputs.version_tag }}**
+            - Tanggal Build: ${{ github.event.repository.updated_at }}
+          draft: false
+          prerelease: ${{ inputs.is_prerelease }}
+          files: ${{ steps.rename_apk.outputs.apk_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
