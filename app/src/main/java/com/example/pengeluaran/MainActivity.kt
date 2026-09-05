@@ -20,6 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.pengeluaran.data.Expense
 import com.example.pengeluaran.util.ApkDownloader
@@ -27,7 +29,8 @@ import com.example.pengeluaran.util.UpdateChecker
 import com.example.pengeluaran.util.UpdateInfo
 import com.example.pengeluaran.viewmodel.ExpenseViewModel
 import kotlinx.coroutines.launch
-import java.text.NumberFormat
+import java.text.DecimalFormat
+import java.text.DecimalFormatSymbols
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -55,21 +58,34 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    // State data input & transaksi
+    // Daftar Kategori Sesuai Permintaan
+    val categoryList = listOf(
+        "Debt",
+        "Food",
+        "Gifts",
+        "Home",
+        "Transportation/gas",
+        "Electricity",
+        "Ecommerce",
+        "Investment"
+    )
+
+    // State data transaksi
     val expenseList by viewModel.expenses.collectAsState()
     var title by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf(categoryList[1]) } // Default: Food
+    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
 
     val totalExpense = expenseList.sumOf { it.amount }
 
-    // State pembaruan aplikasi
+    // State update aplikasi
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     val currentVersion = remember { UpdateChecker.getCurrentVersion(context) }
 
-    // Cek pembaruan otomatis saat aplikasi pertama kali dijalankan
+    // Cek update otomatis saat aplikasi dibuka
     LaunchedEffect(Unit) {
         val result = UpdateChecker.checkLatestRelease(context)
         if (result.hasUpdate) {
@@ -91,7 +107,6 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 ),
                 actions = {
-                    // Tombol menu titik tiga
                     IconButton(onClick = { showMenu = !showMenu }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Menu Opsi")
                     }
@@ -148,38 +163,74 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Form Input Pengeluaran
+            // Form Input Judul
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
-                label = { Text("Nama Pengeluaran (mis. Makan Siang)") },
+                label = { Text("Nama Pengeluaran (mis. Beli Token)") },
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(8.dp))
+
+            // Form Input Jumlah (Keyboard Numpad Angka Murni)
             OutlinedTextField(
                 value = amount,
-                onValueChange = { amount = it },
+                onValueChange = { input ->
+                    // Hanya izinkan karakter angka 0-9
+                    if (input.all { it.isDigit() }) {
+                        amount = input
+                    }
+                },
                 label = { Text("Jumlah (Rp)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                visualTransformation = VisualTransformation.None,
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(
-                value = category,
-                onValueChange = { category = it },
-                label = { Text("Kategori (mis. Makanan, Transport)") },
+
+            // Dropdown Pilihan Kategori
+            ExposedDropdownMenuBox(
+                expanded = isCategoryDropdownExpanded,
+                onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded },
                 modifier = Modifier.fillMaxWidth()
-            )
+            ) {
+                OutlinedTextField(
+                    value = selectedCategory,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Kategori") },
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryDropdownExpanded)
+                    },
+                    modifier = Modifier
+                        .menuAnchor()
+                        .fillMaxWidth()
+                )
+                ExposedDropdownMenu(
+                    expanded = isCategoryDropdownExpanded,
+                    onDismissRequest = { isCategoryDropdownExpanded = false }
+                ) {
+                    categoryList.forEach { categoryItem ->
+                        DropdownMenuItem(
+                            text = { Text(categoryItem) },
+                            onClick = {
+                                selectedCategory = categoryItem
+                                isCategoryDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(12.dp))
 
+            // Tombol Simpan
             Button(
                 onClick = {
                     val parsedAmount = amount.toDoubleOrNull() ?: 0.0
                     if (title.isNotBlank() && parsedAmount > 0) {
-                        viewModel.addExpense(title, parsedAmount, category.ifBlank { "Umum" })
+                        viewModel.addExpense(title, parsedAmount, selectedCategory)
                         title = ""
                         amount = ""
-                        category = ""
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -191,7 +242,7 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
             Text("Histori Transaksi", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
 
-            // List Riwayat Transaksi
+            // Daftar Histori Transaksi
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxSize()
@@ -202,7 +253,7 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
             }
         }
 
-        // Dialog Notifikasi Update & Eksekusi Download
+        // Dialog Pembaruan
         if (showUpdateDialog && updateInfo != null) {
             AlertDialog(
                 onDismissRequest = { showUpdateDialog = false },
@@ -223,14 +274,11 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
                             showUpdateDialog = false
                             val downloadUrl = updateInfo?.downloadUrl
                             if (!downloadUrl.isNullOrBlank()) {
-                                // Pemanggilan DownloadManager dan auto-install (Langkah No. 4)
                                 ApkDownloader.downloadAndInstall(
                                     context = context,
                                     downloadUrl = downloadUrl,
                                     fileName = "ExpenseTracker-${updateInfo?.latestVersion}.apk"
                                 )
-                            } else {
-                                Toast.makeText(context, "URL unduhan tidak ditemukan", Toast.LENGTH_SHORT).show()
                             }
                         }
                     ) {
@@ -279,8 +327,12 @@ fun ExpenseItem(expense: Expense, onDelete: () -> Unit) {
     }
 }
 
+// Fungsi formatter "Rp 7.000" tanpa desimal ",00"
 fun formatRupiah(number: Double): String {
-    val localeID = Locale("in", "ID")
-    val format = NumberFormat.getCurrencyInstance(localeID)
-    return format.format(number)
+    val symbols = DecimalFormatSymbols(Locale("in", "ID")).apply {
+        currencySymbol = "Rp "
+        groupingSeparator = '.'
+    }
+    val formatter = DecimalFormat("Rp #,###", symbols)
+    return if (number == 0.0) "Rp 0" else formatter.format(number)
 }
