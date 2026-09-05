@@ -1,38 +1,4 @@
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    id("kotlin-kapt")
-}
-
-android {
-    namespace = "com.example.pengeluaran"
-    compileSdk = 34
-
-    defaultConfig {
-        applicationId = "com.example.pengeluaran"
-        minSdk = 31 // Target Android 12 ke atas
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
-    }
-    // ...
-}
-
-dependencies {
-    // Jetpack Compose
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.ui)
-    implementation(libs.androidx.material3)
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
-
-    // Room Database
-    val roomVersion = "2.6.1"
-    implementation("androidx.room:room-runtime:$roomVersion")
-    implementation("androidx.room:room-ktx:$roomVersion")
-    kapt("androidx.room:room-compiler:$roomVersion")
-
-    // OkHttp untuk HTTP request ringan
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    // Coroutine support (sudah bawaan Compose)
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+    id("com.android.application") version "8.4.0" apply false
+    id("org.jetbrains.kotlin.android") version "1.9.22" apply false
 }
