@@ -10,34 +10,17 @@ import kotlinx.coroutines.flow.map
 val Context.dataStore by preferencesDataStore(name = "budget_prefs")
 
 class BudgetPreferences(private val context: Context) {
-
-    private val PAYCHECK_KEY = doublePreferencesKey("paycheck_amount")
-
-    // Baca nilai Paycheck
-    val paycheckFlow: Flow<Double> = context.dataStore.data.map { prefs ->
-        prefs[PAYCHECK_KEY] ?: 4000000.0 // Default 4 juta
+    companion object {
+        val KEY_INCOME = doublePreferencesKey("user_income")
     }
 
-    // Simpan nilai Paycheck
-    suspend fun savePaycheck(amount: Double) {
-        context.dataStore.edit { prefs ->
-            prefs[PAYCHECK_KEY] = amount
-        }
+    val incomeFlow: Flow<Double> = context.dataStore.data.map { preferences ->
+        preferences[KEY_INCOME] ?: 4750000.0 // Default pemasukan jika belum pernah diedit
     }
 
-    // Baca Planned Budget per kategori
-    fun getPlannedBudgetFlow(category: String, defaultAmount: Double = 0.0): Flow<Double> {
-        val key = doublePreferencesKey("planned_$category")
-        return context.dataStore.data.map { prefs ->
-            prefs[key] ?: defaultAmount
-        }
-    }
-
-    // Simpan Planned Budget per kategori
-    suspend fun savePlannedBudget(category: String, amount: Double) {
-        val key = doublePreferencesKey("planned_$category")
-        context.dataStore.edit { prefs ->
-            prefs[key] = amount
+    suspend fun saveIncome(income: Double) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_INCOME] = income
         }
     }
 }
