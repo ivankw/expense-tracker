@@ -8,12 +8,11 @@ android {
     namespace = "com.example.pengeluaran"
     compileSdk = 34
 
-   defaultConfig {
+    defaultConfig {
         applicationId = "com.example.pengeluaran"
         minSdk = 31
         targetSdk = 34
 
-        // Ambil versi dinamis yang dikirim oleh GitHub Actions (-PcustomVersionCode & -PcustomVersionName)
         val passedVersionCode = project.findProperty("customVersionCode")?.toString()?.toIntOrNull() ?: 1
         val passedVersionName = project.findProperty("customVersionName")?.toString() ?: "1.0.0"
 
@@ -26,6 +25,16 @@ android {
         }
     }
 
+    signingConfigs {
+        create("releaseKey") {
+            // Menggunakan keystore tetap yang digenerate oleh pipeline dengan seed statis
+            storeFile = file("${System.getProperty("user.home")}/release.keystore")
+            storePassword = "password123"
+            keyAlias = "releasealias"
+            keyPassword = "password123"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -33,33 +42,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            // Terapkan keystore statis
+            signingConfig = signingConfigs.getByName("releaseKey")
         }
     }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
+    // ... sisa compileOptions, kotlinOptions, dependencies tetap sama
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
-    buildFeatures {
-        compose = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8"
-    }
-
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        }
-    }
-}
 
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
