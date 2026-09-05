@@ -67,7 +67,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
 
     val expenseList by viewModel.expenses.collectAsState()
 
-    // Default Pemasukan/Income (Dapat disesuaikan atau dihubungkan ke preferences)
+    // Default Pemasukan/Income
     var incomeAmount by remember { mutableDoubleStateOf(4750000.0) }
 
     // State Update Versi Aplikasi
@@ -163,11 +163,11 @@ fun MainScreen(viewModel: ExpenseViewModel) {
                     onSaveExpense = { title, amount, category ->
                         viewModel.addExpense(title, amount, category)
                         Toast.makeText(context, "Transaksi berhasil disimpan!", Toast.LENGTH_SHORT).show()
-                        selectedTab = 1 // Pindah otomatis ke Dashboard untuk melihat ringkasan
+                        selectedTab = 1 // Pindah otomatis ke Dashboard
                     }
                 )
             } else {
-                // Tampilan Menu Kanan: Dashboard Ringkasan & Histori
+                // Tampilan Menu Kanan: Dashboard Finansial & Histori
                 DashboardTab(
                     expenses = expenseList,
                     incomeAmount = incomeAmount,
@@ -239,7 +239,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
 }
 
 // =====================================================================================
-// 1. MENU SEBELAH KIRI: FORM CATAT TRANSAKSI
+// 1. MENU SEBELAH KIRI: FORM CATAT TRANSAKSI (DILENGKAPI LIVE FORMAT TITIK)
 // =====================================================================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -258,9 +258,14 @@ fun RecordExpenseTab(
     )
 
     var title by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
+    var rawAmountDigits by remember { mutableStateOf("") } // Menyimpan angka murni tanpa titik
     var selectedCategory by remember { mutableStateOf(categoryList[1]) } // Default: Food
     var isCategoryExpanded by remember { mutableStateOf(false) }
+
+    // String yang diformat dengan titik ribuan secara live
+    val displayAmount = remember(rawAmountDigits) {
+        formatNumberWithDots(rawAmountDigits)
+    }
 
     Column(
         modifier = Modifier
@@ -282,15 +287,20 @@ fun RecordExpenseTab(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Input Nominal (Keyboard Numerik Murni)
+        // Input Nominal dengan Format Titik Otomatis & Numpad Murni
         OutlinedTextField(
-            value = amount,
+            value = displayAmount,
             onValueChange = { input ->
-                if (input.all { it.isDigit() }) {
-                    amount = input
+                // Saring hanya karakter digit angka (menghapus titik saat input berubah)
+                val digitsOnly = input.filter { it.isDigit() }
+                // Batasi agar tidak melampaui batas angka realistis (misal maks 14 digit)
+                if (digitsOnly.length <= 14) {
+                    rawAmountDigits = digitsOnly.trimStart('0')
                 }
             },
             label = { Text("Jumlah (Rp)") },
+            placeholder = { Text("0") },
+            prefix = { Text("Rp ") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
             visualTransformation = VisualTransformation.None,
             modifier = Modifier.fillMaxWidth()
@@ -335,11 +345,11 @@ fun RecordExpenseTab(
         // Tombol Simpan
         Button(
             onClick = {
-                val parsedAmount = amount.toDoubleOrNull() ?: 0.0
+                val parsedAmount = rawAmountDigits.toDoubleOrNull() ?: 0.0
                 if (title.isNotBlank() && parsedAmount > 0) {
                     onSaveExpense(title, parsedAmount, selectedCategory)
                     title = ""
-                    amount = ""
+                    rawAmountDigits = ""
                 }
             },
             modifier = Modifier
@@ -364,7 +374,7 @@ fun DashboardTab(
     val remainingBudget = incomeAmount - totalExpense
     val expenseRatio = if (incomeAmount > 0) (totalExpense / incomeAmount).toFloat().coerceIn(0f, 1f) else 0f
 
-    // Evaluasi Status Saldo & Warna
+    // Status Saldo & Warna
     val (statusText, statusColor) = when {
         remainingBudget < 0 -> Pair("Defisit (Overbudget)", Color(0xFFD32F2F))
         remainingBudget < (incomeAmount * 0.2) -> Pair("Hati-hati (Sisa < 20%)", Color(0xFFF57C00))
@@ -526,8 +536,21 @@ fun ExpenseItem(expense: Expense, onDelete: () -> Unit) {
 }
 
 // =====================================================================================
-// FORMATTER RUPIAH ("Rp 7.000" TANPA ",00")
+// HELPER FORMATTER
 // =====================================================================================
+
+// 1. Memformat angka murni menjadi format ribuan dengan titik (contoh: "1000000" -> "1.000.000")
+fun formatNumberWithDots(digits: String): String {
+    if (digits.isBlank()) return ""
+    val parsed = digits.toLongOrNull() ?: return digits
+    val symbols = DecimalFormatSymbols(Locale("in", "ID")).apply {
+        groupingSeparator = '.'
+    }
+    val formatter = DecimalFormat("#,###", symbols)
+    return formatter.format(parsed)
+}
+
+// 2. Format Rupiah: "Rp 7.000" tanpa desimal ",00"
 fun formatRupiah(number: Double): String {
     val symbols = DecimalFormatSymbols(Locale("in", "ID")).apply {
         currencySymbol = "Rp "
