@@ -95,10 +95,10 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     kapt("androidx.room:room-compiler:$roomVersion")
 
-    // DataStore Preferences (Solusi Error Unresolved reference: datastore)
+    // DataStore Preferences
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 
-    // Network (OkHttp) & Coroutines
+    // Network & Async
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
 }
