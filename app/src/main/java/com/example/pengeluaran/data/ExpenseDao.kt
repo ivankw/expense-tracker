@@ -11,6 +11,9 @@ interface ExpenseDao {
     @Query("SELECT * FROM expenses WHERE title = :title ORDER BY date DESC LIMIT 1")
     suspend fun getLatestExpenseByTitle(title: String): Expense?
 
+    @Query("SELECT COUNT(*) FROM expenses WHERE date >= :startOfDayMillis")
+    suspend fun getCountSince(startOfDayMillis: Long): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertExpense(expense: Expense)
 
