@@ -32,10 +32,10 @@ object ApkDownloader {
 
                 // Gunakan intent murni New Task tanpa requestCode
                 val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                    data = Uri.parse("package:${appContext.packageName}")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                appContext.startActivity(settingsIntent)
+                  data = Uri.parse("package:${appContext.packageName}")
+                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                           }
+                              appContext.startActivity(settingsIntent)
                 return
             }
         }
