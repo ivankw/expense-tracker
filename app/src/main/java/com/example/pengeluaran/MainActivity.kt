@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.pengeluaran.data.BudgetPreferences
 import com.example.pengeluaran.data.Expense
 import com.example.pengeluaran.util.ApkDownloader
 import com.example.pengeluaran.util.UpdateChecker
@@ -69,6 +71,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+enum class TimeFilter {
+    THIS_MONTH, LAST_MONTH, ALL
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(viewModel: ExpenseViewModel) {
@@ -78,7 +84,13 @@ fun MainScreen(viewModel: ExpenseViewModel) {
 
     var selectedTab by remember { mutableIntStateOf(0) }
     val expenseList by viewModel.expenses.collectAsState()
-    val incomeAmount by remember { mutableDoubleStateOf(4750000.0) }
+
+    // DataStore Pemasukan Dinamis
+    val budgetPrefs = remember { BudgetPreferences(context) }
+    val incomeAmount by budgetPrefs.incomeFlow.collectAsState(initial = 4750000.0)
+
+    // Dialog State Edit Pemasukan
+    var showEditIncomeDialog by remember { mutableStateOf(false) }
 
     // Dialog State Hapus Transaksi
     var expenseToDelete by remember { mutableStateOf<Expense?>(null) }
@@ -180,9 +192,62 @@ fun MainScreen(viewModel: ExpenseViewModel) {
                 DashboardTab(
                     expenses = expenseList,
                     incomeAmount = incomeAmount,
+                    onEditIncomeClick = { showEditIncomeDialog = true },
                     onRequestDelete = { expenseToDelete = it }
                 )
             }
+        }
+
+        // Dialog Edit Pemasukan Dinamis
+        if (showEditIncomeDialog) {
+            var rawIncomeInput by remember { mutableStateOf(incomeAmount.toLong().toString()) }
+            val formattedIncomeInput = remember(rawIncomeInput) { formatNumberWithDots(rawIncomeInput) }
+
+            AlertDialog(
+                onDismissRequest = { showEditIncomeDialog = false },
+                title = { Text("Atur Pemasukan Bulanan") },
+                text = {
+                    Column {
+                        Text("Masukkan nominal estimasi pemasukan / gaji Anda per bulan:")
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = formattedIncomeInput,
+                            onValueChange = { input ->
+                                val digits = input.filter { it.isDigit() }
+                                if (digits.length <= 14) {
+                                    rawIncomeInput = digits.trimStart('0')
+                                }
+                            },
+                            label = { Text("Pemasukan (Rp)") },
+                            prefix = { Text("Rp ") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val newIncome = rawIncomeInput.toDoubleOrNull() ?: 0.0
+                            if (newIncome > 0) {
+                                coroutineScope.launch {
+                                    budgetPrefs.saveIncome(newIncome)
+                                }
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                showEditIncomeDialog = false
+                                Toast.makeText(context, "Pemasukan berhasil diperbarui!", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    ) {
+                        Text("Simpan")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEditIncomeDialog = false }) {
+                        Text("Batal")
+                    }
+                }
+            )
         }
 
         // Dialog Konfirmasi Hapus Transaksi
@@ -277,7 +342,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
 }
 
 // =====================================================================================
-// MENU SEBELAH KIRI: FORM CATAT TRANSAKSI (DILENGKAPI DATE PICKER)
+// FORM CATAT TRANSAKSI
 // =====================================================================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -302,7 +367,6 @@ fun RecordExpenseTab(
     var selectedCategory by remember { mutableStateOf(categoryList[1]) }
     var isCategoryExpanded by remember { mutableStateOf(false) }
 
-    // State Tanggal (Default: Hari Ini)
     var selectedDateMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val dateFormatter = remember { SimpleDateFormat("dd MMMM yyyy", Locale("in", "ID")) }
     val displayDate = remember(selectedDateMillis) { dateFormatter.format(Date(selectedDateMillis)) }
@@ -321,14 +385,11 @@ fun RecordExpenseTab(
         }
     }
 
-    // Inisialisasi Android DatePickerDialog
     val calendar = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
     val datePickerDialog = DatePickerDialog(
         context,
         { _: DatePicker, year: Int, month: Int, dayOfMonth: Int ->
-            val updatedCal = Calendar.getInstance().apply {
-                set(year, month, dayOfMonth)
-            }
+            val updatedCal = Calendar.getInstance().apply { set(year, month, dayOfMonth) }
             selectedDateMillis = updatedCal.timeInMillis
         },
         calendar.get(Calendar.YEAR),
@@ -377,7 +438,6 @@ fun RecordExpenseTab(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Quick Amount Chips
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -413,7 +473,6 @@ fun RecordExpenseTab(
             }
         }
 
-        // Pilihan Kategori Dropdown
         ExposedDropdownMenuBox(
             expanded = isCategoryExpanded,
             onExpandedChange = { isCategoryExpanded = !isCategoryExpanded },
@@ -447,7 +506,6 @@ fun RecordExpenseTab(
             }
         }
 
-        // Input Tanggal Transaksi
         OutlinedTextField(
             value = displayDate,
             onValueChange = {},
@@ -475,29 +533,59 @@ fun RecordExpenseTab(
 }
 
 // =====================================================================================
-// MENU SEBELAH KANAN: DASHBOARD FINANSIAL, SEARCH BAR & SWIPE-TO-DISMISS
+// DASHBOARD: FINANSIAL, CATEGORY BREAKDOWN, & FILTER WAKTU
 // =====================================================================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardTab(
     expenses: List<Expense>,
     incomeAmount: Double,
+    onEditIncomeClick: () -> Unit,
     onRequestDelete: (Expense) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var selectedTimeFilter by remember { mutableStateOf(TimeFilter.THIS_MONTH) }
 
-    val filteredExpenses = remember(expenses, searchQuery) {
+    // Filter Waktu (Bulan Ini, Bulan Lalu, Semua)
+    val timeFilteredExpenses = remember(expenses, selectedTimeFilter) {
+        val now = Calendar.getInstance()
+        val currentMonth = now.get(Calendar.MONTH)
+        val currentYear = now.get(Calendar.YEAR)
+
+        when (selectedTimeFilter) {
+            TimeFilter.ALL -> expenses
+            TimeFilter.THIS_MONTH -> {
+                expenses.filter { exp ->
+                    val expCal = Calendar.getInstance().apply { timeInMillis = exp.date }
+                    expCal.get(Calendar.MONTH) == currentMonth && expCal.get(Calendar.YEAR) == currentYear
+                }
+            }
+            TimeFilter.LAST_MONTH -> {
+                val lastMonthCal = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }
+                val targetMonth = lastMonthCal.get(Calendar.MONTH)
+                val targetYear = lastMonthCal.get(Calendar.YEAR)
+                expenses.filter { exp ->
+                    val expCal = Calendar.getInstance().apply { timeInMillis = exp.date }
+                    expCal.get(Calendar.MONTH) == targetMonth && expCal.get(Calendar.YEAR) == targetYear
+                }
+            }
+        }
+    }
+
+    // Filter Search Query
+    val displayExpenses = remember(timeFilteredExpenses, searchQuery) {
         if (searchQuery.isBlank()) {
-            expenses
+            timeFilteredExpenses
         } else {
-            expenses.filter {
+            timeFilteredExpenses.filter {
                 it.title.contains(searchQuery, ignoreCase = true) ||
                 it.category.contains(searchQuery, ignoreCase = true)
             }
         }
     }
 
-    val totalExpense = expenses.sumOf { it.amount }
+    // Perhitungan Ringkasan
+    val totalExpense = timeFilteredExpenses.sumOf { it.amount }
     val remainingBudget = incomeAmount - totalExpense
     val expenseRatio = if (incomeAmount > 0) (totalExpense / incomeAmount).toFloat().coerceIn(0f, 1f) else 0f
 
@@ -507,143 +595,230 @@ fun DashboardTab(
         else -> Pair("Aman (Surplus)", Color(0xFF388E3C))
     }
 
-    Column(
+    // Perhitungan Category Breakdown (Urut dari terbesar)
+    val categoryBreakdown = remember(timeFilteredExpenses) {
+        timeFilteredExpenses
+            .groupBy { it.category }
+            .mapValues { entry -> entry.value.sumOf { it.amount } }
+            .toList()
+            .sortedByDescending { it.second }
+    }
+
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
     ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Total Pemasukan:", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        formatRupiah(incomeAmount),
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Total Pengeluaran:", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        formatRupiah(totalExpense),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text("Sisa Saldo (Tabungan):", style = MaterialTheme.typography.labelMedium)
+        // 1. KARTU RINGKASAN SALDO & PEMASUKAN DINAMIS
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Pemasukan:", style = MaterialTheme.typography.bodyMedium)
+                            IconButton(
+                                onClick = onEditIncomeClick,
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = "Edit Pemasukan", modifier = Modifier.size(16.dp))
+                            }
+                        }
                         Text(
-                            statusText,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = statusColor,
-                            fontWeight = FontWeight.Bold
+                            formatRupiah(incomeAmount),
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyLarge
                         )
                     }
-                    Text(
-                        formatRupiah(remainingBudget),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = statusColor
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Total Pengeluaran:", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            formatRupiah(totalExpense),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Sisa Saldo (Tabungan):", style = MaterialTheme.typography.labelMedium)
+                            Text(
+                                statusText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = statusColor,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            formatRupiah(remainingBudget),
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = statusColor
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    LinearProgressIndicator(
+                        progress = { expenseRatio },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp),
+                        color = if (expenseRatio >= 0.8f) Color(0xFFD32F2F) else MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 }
+            }
+        }
 
-                Spacer(modifier = Modifier.height(12.dp))
+        // 2. KARTU CATEGORY BREAKDOWN (ANALITIK KATEGORI)
+        if (categoryBreakdown.isNotEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            "Alokasi Pengeluaran per Kategori",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                LinearProgressIndicator(
-                    progress = { expenseRatio },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp),
-                    color = if (expenseRatio >= 0.8f) Color(0xFFD32F2F) else MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        categoryBreakdown.forEach { (catName, catTotal) ->
+                            val catPercentage = if (totalExpense > 0) (catTotal / totalExpense).toFloat() else 0f
+                            val percentText = (catPercentage * 100).toInt()
+
+                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(catName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                                    Text(
+                                        "${formatRupiah(catTotal)} ($percentText%)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(3.dp))
+                                LinearProgressIndicator(
+                                    progress = { catPercentage.coerceIn(0f, 1f) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(5.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.surface
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. FILTER PERIODE WAKTU (CHIPS)
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = selectedTimeFilter == TimeFilter.THIS_MONTH,
+                    onClick = { selectedTimeFilter = TimeFilter.THIS_MONTH },
+                    label = { Text("Bulan Ini") }
+                )
+                FilterChip(
+                    selected = selectedTimeFilter == TimeFilter.LAST_MONTH,
+                    onClick = { selectedTimeFilter = TimeFilter.LAST_MONTH },
+                    label = { Text("Bulan Lalu") }
+                )
+                FilterChip(
+                    selected = selectedTimeFilter == TimeFilter.ALL,
+                    onClick = { selectedTimeFilter = TimeFilter.ALL },
+                    label = { Text("Semua") }
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // SEARCH BAR HISTORI
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            placeholder = { Text("Cari transaksi atau kategori...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(Icons.Default.Clear, contentDescription = "Clear")
+        // 4. SEARCH BAR
+        item {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Cari transaksi...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear")
+                        }
                     }
-                }
-            },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        // 5. JUDUL HISTORI
+        item {
+            Text(
+                text = "Histori Transaksi (${displayExpenses.size})",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
 
-        Text(
-            text = "Histori Transaksi (${filteredExpenses.size})",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-
-        if (filteredExpenses.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = if (searchQuery.isBlank()) "Belum ada transaksi pengeluaran" else "Tidak ada transaksi yang cocok",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.outline
-                )
-            }
-        } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f)
-            ) {
-                items(filteredExpenses, key = { it.id }) { item ->
-                    SwipeableExpenseItem(
-                        expense = item,
-                        onDelete = { onRequestDelete(item) }
+        // 6. DAFTAR HISTORI SWIPEABLE
+        if (displayExpenses.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (searchQuery.isBlank()) "Tidak ada transaksi di periode ini" else "Tidak ada transaksi yang cocok",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline
                     )
                 }
+            }
+        } else {
+            items(displayExpenses, key = { it.id }) { item ->
+                SwipeableExpenseItem(
+                    expense = item,
+                    onDelete = { onRequestDelete(item) }
+                )
             }
         }
     }
 }
 
 // =====================================================================================
-// KOMPONEN ITEM HISTORI DENGAN SWIPE-TO-DISMISS
+// ITEM HISTORI TRANSAKSI SWIPE-TO-DISMISS
 // =====================================================================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -655,7 +830,7 @@ fun SwipeableExpenseItem(
         confirmValueChange = { dismissValue ->
             if (dismissValue == SwipeToDismissBoxValue.EndToStart || dismissValue == SwipeToDismissBoxValue.StartToEnd) {
                 onDelete()
-                false // Menahan agar posisi tidak langsung hilang sebelum dialog konfirmasi ditekan
+                false
             } else {
                 false
             }
