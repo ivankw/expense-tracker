@@ -52,13 +52,13 @@ jobs:
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
 
       # 2. Membuat keystore statis agar tanda tangan APK selalu identik di setiap build
-      - name: Generate static debug keystore
+      # Generate keystore dengan seed tetap di home directory runner
+      - name: Generate static release keystore
         run: |
-          mkdir -p ~/.android
-          keytool -genkey -v -keystore ~/.android/debug.keystore \
-            -storepass android -alias androiddebugkey -keypass android \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US"
+          keytool -genkey -v -keystore ~/release.keystore \
+            -alias releasealias -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass password123 -keypass password123 \
+            -dname "CN=ExpenseApp, OU=Mobile, O=App, L=Jakarta, ST=Jakarta, C=ID"
 
       # 3. Build APK dengan menyuntikkan versi dinamis
       - name: Build APK with Dynamic Version
