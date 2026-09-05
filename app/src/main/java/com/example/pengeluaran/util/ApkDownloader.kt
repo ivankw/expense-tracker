@@ -21,7 +21,7 @@ object ApkDownloader {
     fun downloadAndInstall(context: Context, downloadUrl: String, fileName: String = "update.apk") {
         val appContext = context.applicationContext
 
-        // Cek izin instalasi Unknown Sources untuk Android 8+
+        // Buka pengaturan Unknown Sources jika belum diizinkan (bebas requestCode)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (!appContext.packageManager.canRequestPackageInstalls()) {
                 Toast.makeText(
@@ -30,12 +30,11 @@ object ApkDownloader {
                     Toast.LENGTH_LONG
                 ).show()
 
-                // Gunakan intent murni New Task tanpa requestCode
                 val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                  data = Uri.parse("package:${appContext.packageName}")
-                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                           }
-                              appContext.startActivity(settingsIntent)
+                    data = Uri.parse("package:${appContext.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                appContext.startActivity(settingsIntent)
                 return
             }
         }
@@ -90,32 +89,6 @@ object ApkDownloader {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             appContext.registerReceiver(onCompleteReceiver, filter, Context.RECEIVER_EXPORTED)
         } else {
-            appContext.registerReceiver(onCompleteReceiver, filter)
-        }
-    }
+            appContext.registerReceiver(onCompleteReceiver,Sesi percakapan kita sebelumnya belum tersambung ke obrolan ini, sehingga saya belum bisa melihat kode, dokumen, atau topik spesifik apa yang terakhir kali kita kerjakan bersama.
 
-    private fun installApk(context: Context, apkFile: File) {
-        if (!apkFile.exists()) {
-            Toast.makeText(context, "File APK tidak ditemukan", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        try {
-            val apkUri: Uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.provider",
-                apkFile
-            )
-
-            val installIntent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(apkUri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-
-            context.startActivity(installIntent)
-        } catch (e: Exception) {
-            Toast.makeText(context, "Gagal membuka installer: ${e.message}", Toast.LENGTH_LONG).show()
-        }
-    }
-}
+Bisa tolong sebutkan judul proyek, topik, atau cuplikan bagian yang sedang kita garap? Saya akan langsung melanjutkan dan memberikan versi terbarunya.
