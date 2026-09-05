@@ -4,4 +4,7 @@
     <external-path name="external_download" path="Download/" />
     <!-- Jalur folder Download privat aplikasi -->
     <external-files-path name="external_files_download" path="Download/" />
+
+    <external-files-path name="external_files" path="." />
+
 </paths>
