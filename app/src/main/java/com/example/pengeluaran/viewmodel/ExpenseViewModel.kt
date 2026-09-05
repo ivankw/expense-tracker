@@ -31,7 +31,6 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     val incomeFlow: StateFlow<Double> = budgetPreferences.incomeFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-    // Pengeluaran
     fun addExpense(title: String, amount: Double, category: String, dateMillis: Long = System.currentTimeMillis()) {
         viewModelScope.launch {
             expenseDao.insertExpense(
@@ -63,7 +62,6 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Plafon Kategori
     fun setCategoryBudget(category: String, limit: Double) {
         viewModelScope.launch {
             if (limit <= 0) {
@@ -74,7 +72,6 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Tagihan Rutin
     fun addRecurringBill(title: String, amount: Double, category: String, dueDay: Int) {
         viewModelScope.launch {
             recurringDao.insertRecurring(
@@ -100,11 +97,10 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Fitur 1-Klik: Bayar tagihan dan otomatis catat ke pengeluaran
+    // 1-Klik: Bayar tagihan dan catat ke riwayat pengeluaran
     fun payRecurringBill(bill: RecurringBill) {
         viewModelScope.launch {
             val currentMonthYear = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
-            // 1. Catat ke tabel riwayat transaksi
             expenseDao.insertExpense(
                 Expense(
                     title = "[Tagihan] ${bill.title}",
@@ -113,8 +109,19 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                     date = System.currentTimeMillis()
                 )
             )
-            // 2. Tandai tagihan sebagai sudah lunas bulan ini
             recurringDao.updateRecurring(bill.copy(lastPaidMonthYear = currentMonthYear))
+        }
+    }
+
+    // Undo: Batalkan status bayar & hapus transaksi pengeluaran terkait
+    fun undoPayRecurringBill(bill: RecurringBill) {
+        viewModelScope.launch {
+            val targetTitle = "[Tagihan] ${bill.title}"
+            val existingExpense = expenseDao.getLatestExpenseByTitle(targetTitle)
+            if (existingExpense != null) {
+                expenseDao.deleteExpense(existingExpense)
+            }
+            recurringDao.updateRecurring(bill.copy(lastPaidMonthYear = ""))
         }
     }
 }
