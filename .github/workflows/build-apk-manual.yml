@@ -52,7 +52,7 @@ jobs:
           echo "version_tag=$VERSION_TAG" >> $GITHUB_OUTPUT
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
 
-      # Otomatis buat keystore permanen jika belum ada, lalu commit ke repo
+      # Generate keystore permanen jika belum ada dan paksa commit dengan flag -f
       - name: Ensure permanent keystore exists
         run: |
           if [ ! -f release.keystore ]; then
@@ -70,12 +70,12 @@ jobs:
 
             git config --global user.name "github-actions[bot]"
             git config --global user.email "github-actions[bot]@users.noreply.github.com"
-            git add release.keystore
-            git commit -m "chore: add permanent release keystore [skip ci]"
-            git push
+            git add -f release.keystore
+            git commit -m "chore: add permanent release keystore [skip ci]" || echo "No changes to commit"
+            git push origin HEAD:${{ github.ref }} || echo "Push skipped or already up to date"
             echo "Keystore berhasil disimpan permanen ke repositori."
           else
-            echo "Keystore permanen sudah ada di repositori. Memakai file yang sudah ada."
+            echo "Keystore permanen sudah ada di repositori. Menggunakan file yang ada."
           fi
 
       - name: Build APK with Dynamic Version
