@@ -1,52 +1,64 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("kotlin-kapt")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.ksp)
 }
 
 android {
     namespace = "com.example.pengeluaran"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.example.pengeluaran"
-        minSdk = 31
-        targetSdk = 34
+        minSdk = 26
+        targetSdk = 35
 
-        val passedVersionCode = project.findProperty("customVersionCode")?.toString()?.toIntOrNull() ?: 1
-        val passedVersionName = project.findProperty("customVersionName")?.toString() ?: "1.0.0"
-
-        versionCode = passedVersionCode
-        versionName = passedVersionName
+        // Mengambil versi dinamis dari CI/CD GitHub Actions atau default ke v1.0.0
+        versionCode = project.findProperty("customVersionCode")?.toString()?.toIntOrNull() ?: 1
+        versionName = project.findProperty("customVersionName")?.toString() ?: "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // Membatasi build hanya untuk arsitektur 64-bit HP modern (arm64-v8a)
+        // Memangkas ukuran APK hingga ~60-70% karena menghapus binary x86, x86_64, dan armeabi-v7a
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     signingConfigs {
-        create("releaseKey") {
-            storeFile = file("${rootDir}/release.keystore")
-            storePassword = "password123"
-            keyAlias = "mykey"
-            keyPassword = "password123"
-            enableV1Signing = true
-            enableV2Signing = true
+        create("release") {
+            val keystoreFile = rootProject.file("release.keystore")
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = "password123"
+                keyAlias = "mykey"
+                keyPassword = "password123"
+            }
         }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Mengaktifkan penghapusan kode mati & obfuscation R8
+            isMinifyEnabled = true
+
+            // Menghapus resource gambar/XML yang tidak terpakai
+            isShrinkResources = true
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("releaseKey")
+
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
-            signingConfig = signingConfigs.getByName("releaseKey")
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 
@@ -64,7 +76,7 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8"
+        kotlinCompilerExtensionVersion = "1.5.14"
     }
 
     packaging {
@@ -75,30 +87,31 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.activity:activity-compose:1.8.2")
+    // AndroidX Core & Lifecycle
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.activity.compose)
 
-    // Jetpack Compose
-    val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
-    implementation(composeBom)
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+    // Jetpack Compose BOM & Material 3
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.ui)
+    implementation(libs.androidx.ui.graphics)
+    implementation(libs.androidx.ui.tooling.preview)
+    implementation(libs.androidx.material3)
+    implementation(libs.androidx.material.icons.extended)
 
-    // Room Database
-    val roomVersion = "2.6.1"
-    implementation("androidx.room:room-runtime:$roomVersion")
-    implementation("androidx.room:room-ktx:$roomVersion")
-    kapt("androidx.room:room-compiler:$roomVersion")
+    // Room Database (SQLite Engine)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
 
-    // DataStore Preferences
-    implementation("androidx.datastore:datastore-preferences:1.0.0")
+    // DataStore Preferences (Income Storage)
+    implementation(libs.androidx.datastore.preferences)
 
-    // Network & Async
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+    // Kotlin Coroutines
+    implementation(libs.kotlinx.coroutines.android)
+
+    // Debugging Tooling
+    debugImplementation(libs.androidx.ui.tooling)
+    debugImplementation(libs.androidx.ui.test.manifest)
 }
