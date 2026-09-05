@@ -5,9 +5,12 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
@@ -21,8 +24,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -60,15 +66,15 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainScreen(viewModel: ExpenseViewModel) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
 
-    // 0 = Catat Transaksi (Kiri), 1 = Dashboard (Kanan)
     var selectedTab by remember { mutableIntStateOf(0) }
-
     val expenseList by viewModel.expenses.collectAsState()
+    val incomeAmount by remember { mutableDoubleStateOf(4750000.0) }
 
-    // Default Pemasukan/Income
-    var incomeAmount by remember { mutableDoubleStateOf(4750000.0) }
+    // Dialog State Hapus Transaksi
+    var expenseToDelete by remember { mutableStateOf<Expense?>(null) }
 
     // State Update Versi Aplikasi
     var updateResult by remember { mutableStateOf<UpdateResult?>(null) }
@@ -77,7 +83,6 @@ fun MainScreen(viewModel: ExpenseViewModel) {
     var showMenu by remember { mutableStateOf(false) }
     val currentVersion = remember { UpdateChecker.getCurrentVersion(context) }
 
-    // Cek versi otomatis saat aplikasi dijalankan
     LaunchedEffect(Unit) {
         val res = UpdateChecker.checkRelease(context)
         updateResult = res
@@ -135,14 +140,12 @@ fun MainScreen(viewModel: ExpenseViewModel) {
         },
         bottomBar = {
             NavigationBar {
-                // Menu Kiri: Catat Transaksi Pengeluaran
                 NavigationBarItem(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
                     icon = { Icon(Icons.Default.AddCircle, contentDescription = null) },
                     label = { Text("Catat Transaksi") }
                 )
-                // Menu Kanan: Dashboard
                 NavigationBarItem(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
@@ -158,25 +161,54 @@ fun MainScreen(viewModel: ExpenseViewModel) {
                 .padding(paddingValues)
         ) {
             if (selectedTab == 0) {
-                // Tampilan Menu Kiri: Form Catat Pengeluaran
                 RecordExpenseTab(
                     onSaveExpense = { title, amount, category ->
                         viewModel.addExpense(title, amount, category)
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         Toast.makeText(context, "Transaksi berhasil disimpan!", Toast.LENGTH_SHORT).show()
-                        selectedTab = 1 // Pindah otomatis ke Dashboard
+                        selectedTab = 1
                     }
                 )
             } else {
-                // Tampilan Menu Kanan: Dashboard Finansial & Histori
                 DashboardTab(
                     expenses = expenseList,
                     incomeAmount = incomeAmount,
-                    onDelete = { viewModel.deleteExpense(it) }
+                    onRequestDelete = { expenseToDelete = it }
                 )
             }
         }
 
-        // Dialog Notifikasi Update Tersedia
+        // Dialog Konfirmasi Hapus Transaksi
+        if (expenseToDelete != null) {
+            val target = expenseToDelete!!
+            AlertDialog(
+                onDismissRequest = { expenseToDelete = null },
+                title = { Text("Hapus Transaksi?") },
+                text = {
+                    Text("Apakah Anda yakin ingin menghapus catatan \"${target.title}\" senilai ${formatRupiah(target.amount)}?")
+                },
+                confirmButton = {
+                    Button(
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        onClick = {
+                            viewModel.deleteExpense(target)
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            expenseToDelete = null
+                            Toast.makeText(context, "Transaksi dihapus", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Text("Hapus")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { expenseToDelete = null }) {
+                        Text("Batal")
+                    }
+                }
+            )
+        }
+
+        // Dialog Pembaruan Tersedia
         if (showUpdateDialog && updateResult != null) {
             AlertDialog(
                 onDismissRequest = { showUpdateDialog = false },
@@ -200,8 +232,6 @@ fun MainScreen(viewModel: ExpenseViewModel) {
                                     downloadUrl = downloadUrl,
                                     fileName = "ExpenseTracker-${updateResult?.latestVersion}.apk"
                                 )
-                            } else {
-                                Toast.makeText(context, "URL file APK tidak ditemukan di rilis.", Toast.LENGTH_SHORT).show()
                             }
                         }
                     ) {
@@ -216,7 +246,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
             )
         }
 
-        // Dialog Versi Sudah Paling Baru
+        // Dialog Versi Sudah Terbaru
         if (showUpToDateDialog && updateResult != null) {
             AlertDialog(
                 onDismissRequest = { showUpToDateDialog = false },
@@ -239,13 +269,14 @@ fun MainScreen(viewModel: ExpenseViewModel) {
 }
 
 // =====================================================================================
-// 1. MENU SEBELAH KIRI: FORM CATAT TRANSAKSI (DILENGKAPI LIVE FORMAT TITIK)
+// MENU SEBELAH KIRI: FORM CATAT TRANSAKSI (DENGAN QUICK CHIPS & SMART ACTIONS)
 // =====================================================================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordExpenseTab(
     onSaveExpense: (String, Double, String) -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     val categoryList = listOf(
         "Debt",
         "Food",
@@ -258,20 +289,28 @@ fun RecordExpenseTab(
     )
 
     var title by remember { mutableStateOf("") }
-    var rawAmountDigits by remember { mutableStateOf("") } // Menyimpan angka murni tanpa titik
-    var selectedCategory by remember { mutableStateOf(categoryList[1]) } // Default: Food
+    var rawAmountDigits by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf(categoryList[1]) }
     var isCategoryExpanded by remember { mutableStateOf(false) }
 
-    // String yang diformat dengan titik ribuan secara live
     val displayAmount = remember(rawAmountDigits) {
         formatNumberWithDots(rawAmountDigits)
+    }
+
+    val submitAction = {
+        val parsedAmount = rawAmountDigits.toDoubleOrNull() ?: 0.0
+        if (title.isNotBlank() && parsedAmount > 0) {
+            onSaveExpense(title, parsedAmount, selectedCategory)
+            title = ""
+            rawAmountDigits = ""
+        }
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
             text = "Catat Pengeluaran Baru",
@@ -279,21 +318,18 @@ fun RecordExpenseTab(
             fontWeight = FontWeight.Bold
         )
 
-        // Input Judul Pengeluaran
         OutlinedTextField(
             value = title,
             onValueChange = { title = it },
             label = { Text("Nama Pengeluaran (mis. Beli Token Listrik)") },
+            singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Input Nominal dengan Format Titik Otomatis & Numpad Murni
         OutlinedTextField(
             value = displayAmount,
             onValueChange = { input ->
-                // Saring hanya karakter digit angka (menghapus titik saat input berubah)
                 val digitsOnly = input.filter { it.isDigit() }
-                // Batasi agar tidak melampaui batas angka realistis (misal maks 14 digit)
                 if (digitsOnly.length <= 14) {
                     rawAmountDigits = digitsOnly.trimStart('0')
                 }
@@ -301,12 +337,52 @@ fun RecordExpenseTab(
             label = { Text("Jumlah (Rp)") },
             placeholder = { Text("0") },
             prefix = { Text("Rp ") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.NumberPassword,
+                imeAction = ImeAction.Done
+            ),
+            keyboardActions = KeyboardActions(onDone = { submitAction() }),
             visualTransformation = VisualTransformation.None,
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Dropdown Menu Kategori
+        // QUICK-AMOUNT CHIPS ROW
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val quickIncrements = listOf(
+                Pair("+10 rb", 10_000L),
+                Pair("+20 rb", 20_000L),
+                Pair("+50 rb", 50_000L),
+                Pair("+100 rb", 100_000L)
+            )
+
+            quickIncrements.forEach { (label, value) ->
+                SuggestionChip(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        val currentVal = rawAmountDigits.toLongOrNull() ?: 0L
+                        rawAmountDigits = (currentVal + value).toString()
+                    },
+                    label = { Text(label) }
+                )
+            }
+
+            if (rawAmountDigits.isNotEmpty()) {
+                SuggestionChip(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        rawAmountDigits = ""
+                    },
+                    label = { Text("Reset", color = MaterialTheme.colorScheme.error) }
+                )
+            }
+        }
+
         ExposedDropdownMenuBox(
             expanded = isCategoryExpanded,
             onExpandedChange = { isCategoryExpanded = !isCategoryExpanded },
@@ -340,18 +416,10 @@ fun RecordExpenseTab(
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
-        // Tombol Simpan
         Button(
-            onClick = {
-                val parsedAmount = rawAmountDigits.toDoubleOrNull() ?: 0.0
-                if (title.isNotBlank() && parsedAmount > 0) {
-                    onSaveExpense(title, parsedAmount, selectedCategory)
-                    title = ""
-                    rawAmountDigits = ""
-                }
-            },
+            onClick = { submitAction() },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp)
@@ -362,19 +430,18 @@ fun RecordExpenseTab(
 }
 
 // =====================================================================================
-// 2. MENU SEBELAH KANAN: DASHBOARD FINANSIAL & HISTORI
+// MENU SEBELAH KANAN: DASHBOARD FINANSIAL & HISTORI
 // =====================================================================================
 @Composable
 fun DashboardTab(
     expenses: List<Expense>,
     incomeAmount: Double,
-    onDelete: (Expense) -> Unit
+    onRequestDelete: (Expense) -> Unit
 ) {
     val totalExpense = expenses.sumOf { it.amount }
     val remainingBudget = incomeAmount - totalExpense
     val expenseRatio = if (incomeAmount > 0) (totalExpense / incomeAmount).toFloat().coerceIn(0f, 1f) else 0f
 
-    // Status Saldo & Warna
     val (statusText, statusColor) = when {
         remainingBudget < 0 -> Pair("Defisit (Overbudget)", Color(0xFFD32F2F))
         remainingBudget < (incomeAmount * 0.2) -> Pair("Hati-hati (Sisa < 20%)", Color(0xFFF57C00))
@@ -386,13 +453,11 @@ fun DashboardTab(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // KARTU RINGKASAN FINANSIAL
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                // Baris Pemasukan
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -408,7 +473,6 @@ fun DashboardTab(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // Baris Pengeluaran
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -425,7 +489,6 @@ fun DashboardTab(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
 
-                // Baris Sisa Saldo / Tabungan
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -450,7 +513,6 @@ fun DashboardTab(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Bar Visual Progress Pengeluaran vs Budget
                 LinearProgressIndicator(
                     progress = { expenseRatio },
                     modifier = Modifier
@@ -471,7 +533,6 @@ fun DashboardTab(
         )
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Daftar Item Histori
         if (expenses.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -493,7 +554,7 @@ fun DashboardTab(
                     .weight(1f)
             ) {
                 items(expenses, key = { it.id }) { item ->
-                    ExpenseItem(expense = item, onDelete = { onDelete(item) })
+                    ExpenseItem(expense = item, onDelete = { onRequestDelete(item) })
                 }
             }
         }
@@ -538,8 +599,6 @@ fun ExpenseItem(expense: Expense, onDelete: () -> Unit) {
 // =====================================================================================
 // HELPER FORMATTER
 // =====================================================================================
-
-// 1. Memformat angka murni menjadi format ribuan dengan titik (contoh: "1000000" -> "1.000.000")
 fun formatNumberWithDots(digits: String): String {
     if (digits.isBlank()) return ""
     val parsed = digits.toLongOrNull() ?: return digits
@@ -550,7 +609,6 @@ fun formatNumberWithDots(digits: String): String {
     return formatter.format(parsed)
 }
 
-// 2. Format Rupiah: "Rp 7.000" tanpa desimal ",00"
 fun formatRupiah(number: Double): String {
     val symbols = DecimalFormatSymbols(Locale("in", "ID")).apply {
         currencySymbol = "Rp "
