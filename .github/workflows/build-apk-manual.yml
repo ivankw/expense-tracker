@@ -1,20 +1,16 @@
-name: Manual Build APK & Release
+name: Manual Build APK & Auto Increment Release
 
 on:
   workflow_dispatch:
     inputs:
-      version_tag:
-        description: 'Tag Versi Release (misal: v1.0.0)'
-        required: true
-        default: 'v1.0.0'
       build_type:
-        description: 'Tipe build APK'
+        description: 'Pilih tipe build APK'
         required: true
-        default: 'debug'
+        default: 'release'
         type: choice
         options:
-          - debug
           - release
+          - debug
       is_prerelease:
         description: 'Tandai sebagai Pre-release?'
         required: true
@@ -38,38 +34,62 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # Mengunduh Gradle resmi yang bersih langsung di server GitHub Actions
-      # Kunci ke Gradle 8.7 yang stabil untuk Android
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.7'
 
-      # Menggunakan perintah 'gradle' langsung (bukan ./gradlew)
-      - name: Build Debug APK
-        if: ${{ inputs.build_type == 'debug' }}
-        run: gradle assembleDebug
+      # Format versi: versionCode = run_number, versionName = 1.0.<run_number>
+      - name: Generate Dynamic Version
+        id: versioning
+        run: |
+          BUILD_CODE=${{ github.run_number }}
+          VERSION_TAG="v1.0.${BUILD_CODE}"
+          VERSION_NAME="1.0.${BUILD_CODE}"
+          
+          echo "version_code=$BUILD_CODE" >> $GITHUB_OUTPUT
+          echo "version_tag=$VERSION_TAG" >> $GITHUB_OUTPUT
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
 
-      - name: Build Release APK
-        if: ${{ inputs.build_type == 'release' }}
-        run: gradle assembleRelease
+      # Build dengan menyuntikkan versi langsung via properti Gradle (-P)
+      - name: Build APK with Dynamic Version
+        run: |
+          TYPE="${{ inputs.build_type }}"
+          TASK="assembleRelease"
+          if [ "$TYPE" = "debug" ]; then
+            TASK="assembleDebug"
+          fi
+          
+          gradle $TASK \
+            -PcustomVersionCode=${{ steps.versioning.outputs.version_code }} \
+            -PcustomVersionName=${{ steps.versioning.outputs.version_name }}
 
+      # Mengubah nama file APK agar memuat versi rilis
       - name: Rename APK Output
         id: rename_apk
         run: |
-          VERSION="${{ inputs.version_tag }}"
           TYPE="${{ inputs.build_type }}"
+          TAG="${{ steps.versioning.outputs.version_tag }}"
           DIR="app/build/outputs/apk/${TYPE}"
+          
           APK_SRC=$(ls ${DIR}/*.apk | head -n 1)
-          APK_DEST="${DIR}/ExpenseTracker-${TYPE}-${VERSION}.apk"
+          APK_DEST="${DIR}/ExpenseTracker-${TYPE}-${TAG}.apk"
+          
           mv "$APK_SRC" "$APK_DEST"
           echo "apk_path=$APK_DEST" >> $GITHUB_OUTPUT
 
+      # Buat GitHub Release dan lampirkan file APK secara otomatis
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.version_tag }}
-          name: "Release ${{ inputs.version_tag }}"
+          tag_name: ${{ steps.versioning.outputs.version_tag }}
+          name: "Release ${{ steps.versioning.outputs.version_tag }}"
+          body: |
+            ## Pembaruan Otomatis
+            - **Versi Aplikasi:** `${{ steps.versioning.outputs.version_name }}`
+            - **Version Code:** `${{ steps.versioning.outputs.version_code }}`
+            - **Tipe Build:** `${{ inputs.build_type }}`
+            - **Trigger Date:** ${{ github.event.repository.updated_at }}
           draft: false
           prerelease: ${{ inputs.is_prerelease }}
           files: ${{ steps.rename_apk.outputs.apk_path }}
