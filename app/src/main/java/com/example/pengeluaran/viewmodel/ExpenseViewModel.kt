@@ -31,6 +31,15 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     val incomeFlow: StateFlow<Double> = budgetPreferences.incomeFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
+    val themeModeFlow: StateFlow<AppThemeMode> = budgetPreferences.themeModeFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppThemeMode.SYSTEM)
+
+    fun setThemeMode(mode: AppThemeMode) {
+        viewModelScope.launch {
+            budgetPreferences.saveThemeMode(mode)
+        }
+    }
+
     fun addExpense(title: String, amount: Double, category: String, dateMillis: Long = System.currentTimeMillis()) {
         viewModelScope.launch {
             expenseDao.insertExpense(
@@ -97,7 +106,6 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // 1-Klik: Bayar tagihan dan catat ke riwayat pengeluaran
     fun payRecurringBill(bill: RecurringBill) {
         viewModelScope.launch {
             val currentMonthYear = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
@@ -113,7 +121,6 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Undo: Batalkan status bayar & hapus transaksi pengeluaran terkait
     fun undoPayRecurringBill(bill: RecurringBill) {
         viewModelScope.launch {
             val targetTitle = "[Tagihan] ${bill.title}"
