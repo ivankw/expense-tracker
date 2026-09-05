@@ -124,7 +124,6 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
     val totalActual = expenseList.sumOf { it.amount }
     val totalSaving = paycheck - totalActual
     val totalRemain = totalPlanned - totalActual
-    }
 
     // State untuk form input transaksi
     val expenseList by viewModel.expenses.collectAsState()
