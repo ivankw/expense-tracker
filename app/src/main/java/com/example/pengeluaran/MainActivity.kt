@@ -81,13 +81,24 @@ enum class TimeFilter(val label: String) {
     ALL("Semua")
 }
 
+val defaultCategories = listOf(
+    "Debt",
+    "Food",
+    "Gifts",
+    "Home",
+    "Transportation/gas",
+    "Electricity",
+    "Ecommerce",
+    "Investment"
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(viewModel: ExpenseViewModel) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Dashboard Laporan, 1 = Catat & Riwayat
+    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Dashboard, 1 = Catat & Riwayat
 
     val expenseList by viewModel.expenses.collectAsState()
     val income by viewModel.incomeFlow.collectAsState()
@@ -96,6 +107,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showUpToDateDialog by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
     val currentVersion = remember { UpdateChecker.getCurrentVersion(context) }
 
     LaunchedEffect(Unit) {
@@ -131,7 +143,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
                             leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
                             onClick = {
                                 showMenu = false
-                                exportExpensesToCsv(context, expenseList)
+                                showExportDialog = true
                             }
                         )
                         DropdownMenuItem(
@@ -197,9 +209,43 @@ fun MainScreen(viewModel: ExpenseViewModel) {
                         viewModel.addExpense(title, amount, category, dateMillis)
                         Toast.makeText(context, "Transaksi tersimpan!", Toast.LENGTH_SHORT).show()
                     },
+                    onUpdateExpense = { updatedExpense ->
+                        viewModel.updateExpense(updatedExpense)
+                        Toast.makeText(context, "Perubahan transaksi tersimpan!", Toast.LENGTH_SHORT).show()
+                    },
                     onDeleteExpense = { viewModel.deleteExpense(it) }
                 )
             }
+        }
+
+        if (showExportDialog) {
+            AlertDialog(
+                onDismissRequest = { showExportDialog = false },
+                title = { Text("Ekspor Laporan CSV") },
+                text = { Text("Pilih data transaksi yang ingin Anda unduh dan bagikan:") },
+                confirmButton = {
+                    Button(onClick = {
+                        showExportDialog = false
+                        exportExpensesToCsv(context, expenseList, "Semua_Transaksi")
+                    }) {
+                        Text("Ekspor Semua")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showExportDialog = false
+                        val currentCal = Calendar.getInstance()
+                        val thisMonthExpenses = expenseList.filter {
+                            val c = Calendar.getInstance().apply { timeInMillis = it.date }
+                            c.get(Calendar.YEAR) == currentCal.get(Calendar.YEAR) &&
+                                    c.get(Calendar.MONTH) == currentCal.get(Calendar.MONTH)
+                        }
+                        exportExpensesToCsv(context, thisMonthExpenses, "Bulan_Ini")
+                    }) {
+                        Text("Ekspor Bulan Ini Saja")
+                    }
+                }
+            )
         }
 
         if (showUpdateDialog && updateResult != null) {
@@ -261,7 +307,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
 }
 
 // -------------------------------------------------------------------------------------
-// 1. DASHBOARD: PUSAT ANALISIS & LAPORAN FINANSIAL LENGKAP
+// 1. DASHBOARD LAPORAN: ANALISIS FINANSIAL DENGAN LOGIKA AKURAT
 // -------------------------------------------------------------------------------------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -279,8 +325,10 @@ fun DashboardReportsTab(
     var selectedCategoryForDetail by remember { mutableStateOf<String?>(null) }
 
     val now = Calendar.getInstance()
+    val isCurrentMonth = selectedCalendar.get(Calendar.YEAR) == now.get(Calendar.YEAR) &&
+            selectedCalendar.get(Calendar.MONTH) == now.get(Calendar.MONTH)
 
-    // 1. Logika Filter Waktu
+    // Filter transaksi sesuai pilihan
     val filteredExpenses = remember(expenses, selectedFilter, selectedCalendar) {
         expenses.filter { item ->
             val itemCal = Calendar.getInstance().apply { timeInMillis = item.date }
@@ -302,6 +350,7 @@ fun DashboardReportsTab(
     val saving = income - totalExpense
     val isDeficit = saving < 0
 
+    // Rasio Anggaran
     val expenseRatio = if (income > 0) (totalExpense / income).toFloat().coerceIn(0f, 1f) else 0f
     val budgetPercent = if (income > 0) ((totalExpense / income) * 100).toInt() else 0
     val budgetBarColor = when {
@@ -310,18 +359,12 @@ fun DashboardReportsTab(
         else -> Color(0xFF4CAF50)
     }
 
-    // 2. Metrik Batas Aman Belanja Harian (Safe-to-Spend)
-    val isCurrentMonth = selectedCalendar.get(Calendar.YEAR) == now.get(Calendar.YEAR) &&
-            selectedCalendar.get(Calendar.MONTH) == now.get(Calendar.MONTH)
+    // Logika Batas Aman Harian (HANYA BERLAKU UNTUK BULAN INI)
     val daysInMonth = selectedCalendar.getActualMaximum(Calendar.DAY_OF_MONTH)
-    val remainingDaysInMonth = if (isCurrentMonth) {
-        (daysInMonth - now.get(Calendar.DAY_OF_MONTH) + 1).coerceAtLeast(1)
-    } else {
-        daysInMonth
-    }
-    val safeToSpendDaily = if (saving > 0) saving / remainingDaysInMonth else 0.0
+    val remainingDaysInMonth = (daysInMonth - now.get(Calendar.DAY_OF_MONTH) + 1).coerceAtLeast(1)
+    val safeToSpendDaily = if (isCurrentMonth && saving > 0) saving / remainingDaysInMonth else 0.0
 
-    // 3. Metrik Ringkas
+    // Rata-rata harian nyata
     val distinctDays = filteredExpenses.map {
         val c = Calendar.getInstance().apply { timeInMillis = it.date }
         "${c.get(Calendar.YEAR)}-${c.get(Calendar.DAY_OF_YEAR)}"
@@ -329,7 +372,7 @@ fun DashboardReportsTab(
     val dailyAverage = totalExpense / distinctDays
     val highestExpense = filteredExpenses.maxOfOrNull { it.amount } ?: 0.0
 
-    // 4. Breakdown Kategori
+    // Kategori
     val categoryTotals = remember(filteredExpenses) {
         filteredExpenses.groupBy { it.category }
             .mapValues { entry -> entry.value.sumOf { it.amount } }
@@ -343,7 +386,7 @@ fun DashboardReportsTab(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // --- KARTU VIRTUAL DENGAN STATUS BADGE FINANSIAL ---
+        // Kartu Utama Saldo
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -374,7 +417,6 @@ fun DashboardReportsTab(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                            // Badge Status Dinamis (Aman / Waspada / Defisit)
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = when {
@@ -456,22 +498,28 @@ fun DashboardReportsTab(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // Budget Health Indicator & Batas Aman
                         Column {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = if (income > 0) "Terpakai $budgetPercent% dari gaji" else "Pemasukan belum ditentukan",
+                                    text = if (income > 0) "Terpakai $budgetPercent% dari target" else "Pemasukan belum disetel",
                                     color = Color(0xFFCBD5E1),
                                     style = MaterialTheme.typography.labelSmall
                                 )
+                                // Menampilkan Batas Aman jika bulan ini, atau Rata-rata jika periode lain
                                 Text(
-                                    text = if (isCurrentMonth && income > 0) {
-                                        "Batas aman: ${formatRupiahWithPrivacy(safeToSpendDaily, isPrivacyMode)}/hari"
-                                    } else {
-                                        "Rata-rata: ${formatRupiahWithPrivacy(dailyAverage, isPrivacyMode)}/hari"
+                                    text = when {
+                                        selectedFilter == TimeFilter.MONTHLY && isCurrentMonth && income > 0 -> {
+                                            "Batas aman: ${formatRupiahWithPrivacy(safeToSpendDaily, isPrivacyMode)}/hari"
+                                        }
+                                        selectedFilter == TimeFilter.LAST_7_DAYS -> {
+                                            "Rata-rata 7 hari: ${formatRupiahWithPrivacy(dailyAverage, isPrivacyMode)}/hari"
+                                        }
+                                        else -> {
+                                            "Rata-rata: ${formatRupiahWithPrivacy(dailyAverage, isPrivacyMode)}/hari"
+                                        }
                                     },
                                     color = if (isDeficit) Color(0xFFF87171) else Color(0xFF94A3B8),
                                     style = MaterialTheme.typography.labelSmall
@@ -491,7 +539,6 @@ fun DashboardReportsTab(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Tombol Aksi Cepat Kartu
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End
@@ -525,7 +572,7 @@ fun DashboardReportsTab(
             }
         }
 
-        // --- FILTER WAKTU & NAVIGASI BULAN FLEKSIBEL ---
+        // Filter Waktu & Navigasi Bulan
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -541,7 +588,6 @@ fun DashboardReportsTab(
                     }
                 }
 
-                // Bar Navigasi Bulan (< September 2026 >) jika filter Bulanan aktif
                 if (selectedFilter == TimeFilter.MONTHLY) {
                     val monthLabel = SimpleDateFormat("MMMM yyyy", Locale("id", "ID")).format(selectedCalendar.time)
                     Surface(
@@ -590,7 +636,6 @@ fun DashboardReportsTab(
             }
         }
 
-        // --- EMPTY STATE DENGAN CALL-TO-ACTION JIKA BELUM ADA DATA ---
         if (filteredExpenses.isEmpty()) {
             item {
                 Card(
@@ -612,9 +657,9 @@ fun DashboardReportsTab(
                             tint = MaterialTheme.colorScheme.outline
                         )
                         Spacer(modifier = Modifier.height(10.dp))
-                        Text("Belum ada pengeluaran pada periode ini", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text("Belum ada transaksi pada periode ini", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text("Mulai catat transaksi untuk melihat visualisasi laporan.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        Text("Catat pengeluaran untuk melihat laporan dan diagram donat.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(
                             onClick = onNavigateToRecord,
@@ -628,7 +673,7 @@ fun DashboardReportsTab(
                 }
             }
         } else {
-            // --- MINI DONUT CHART MENGGUNAKAN COMPOSE CANVAS NATIVE ---
+            // Donut Chart Canvas Native
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -684,7 +729,6 @@ fun DashboardReportsTab(
                 }
             }
 
-            // --- KARTU STATISTIK RINGKAS ---
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -713,7 +757,6 @@ fun DashboardReportsTab(
                 }
             }
 
-            // --- BREAKDOWN KATEGORI INTERAKTIF (DRILL-DOWN BOTTOM SHEET) ---
             item {
                 Text("Distribusi per Kategori (Sentuh untuk rincian)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
@@ -771,7 +814,6 @@ fun DashboardReportsTab(
         }
     }
 
-    // Modal Bottom Sheet: Drill-Down Rincian Transaksi per Kategori
     if (selectedCategoryForDetail != null) {
         val categoryName = selectedCategoryForDetail!!
         val categoryInfo = getCategoryInfo(categoryName)
@@ -849,9 +891,12 @@ fun DashboardReportsTab(
             text = {
                 OutlinedTextField(
                     value = incomeInput,
-                    onValueChange = { if (it.length <= 12 && it.all { char -> char.isDigit() }) incomeInput = it },
+                    onValueChange = { input ->
+                        val digits = input.filter { it.isDigit() }
+                        if (digits.length <= 12) incomeInput = digits
+                    },
                     label = { Text("Nominal Gaji (Rp)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     visualTransformation = ThousandsSeparatorVisualTransformation()
                 )
             },
@@ -874,37 +919,28 @@ fun DashboardReportsTab(
 }
 
 // -------------------------------------------------------------------------------------
-// 2. TAB KANAN: FORM CATAT PENGELUARAN + DAFTAR HISTORI LENGKAP
+// 2. TAB CATAT & RIWAYAT: DISERTAI FITUR EDIT TRANSAKSI
 // -------------------------------------------------------------------------------------
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun RecordAndHistoryTab(
     expenses: List<Expense>,
     onSaveExpense: (String, Double, String, Long) -> Unit,
+    onUpdateExpense: (Expense) -> Unit,
     onDeleteExpense: (Expense) -> Unit
 ) {
     val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val amountFocusRequester = remember { FocusRequester() }
 
-    val categoryList = listOf(
-        "Debt",
-        "Food",
-        "Gifts",
-        "Home",
-        "Transportation/gas",
-        "Electricity",
-        "Ecommerce",
-        "Investment"
-    )
-
     var title by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf(categoryList[1]) }
+    var selectedCategory by remember { mutableStateOf(defaultCategories[1]) }
     var isCategoryExpanded by remember { mutableStateOf(false) }
     var selectedDateMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     var searchQuery by remember { mutableStateOf("") }
+    var expenseToEdit by remember { mutableStateOf<Expense?>(null) }
     var expenseToDelete by remember { mutableStateOf<Expense?>(null) }
 
     val dateCalendar = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
@@ -959,7 +995,6 @@ fun RecordAndHistoryTab(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Form Input Transaksi Baru
         item {
             Text("Catat Transaksi Pengeluaran", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         }
@@ -998,14 +1033,13 @@ fun RecordAndHistoryTab(
             OutlinedTextField(
                 value = amount,
                 onValueChange = { input ->
-                    if (input.length <= 12 && input.all { it.isDigit() }) {
-                        amount = input
-                    }
+                    val digits = input.filter { it.isDigit() }
+                    if (digits.length <= 12) amount = digits
                 },
                 label = { Text("Jumlah (Rp)") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.NumberPassword,
+                    keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Done
                 ),
                 keyboardActions = KeyboardActions(onDone = { submitExpense() }),
@@ -1046,7 +1080,7 @@ fun RecordAndHistoryTab(
                     expanded = isCategoryExpanded,
                     onDismissRequest = { isCategoryExpanded = false }
                 ) {
-                    categoryList.forEach { categoryItem ->
+                    defaultCategories.forEach { categoryItem ->
                         val info = getCategoryInfo(categoryItem)
                         DropdownMenuItem(
                             text = { Text(categoryItem) },
@@ -1074,7 +1108,6 @@ fun RecordAndHistoryTab(
             }
         }
 
-        // Pencarian & Riwayat
         item {
             Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider()
@@ -1155,11 +1188,125 @@ fun RecordAndHistoryTab(
                 items(itemsInDate, key = { it.id }) { item ->
                     ExpenseItem(
                         expense = item,
+                        onEdit = { expenseToEdit = item },
                         onDelete = { expenseToDelete = item }
                     )
                 }
             }
         }
+    }
+
+    // Dialog Edit Transaksi
+    if (expenseToEdit != null) {
+        val editing = expenseToEdit!!
+        var editTitle by remember(editing) { mutableStateOf(editing.title) }
+        var editAmount by remember(editing) { mutableStateOf(editing.amount.toLong().toString()) }
+        var editCategory by remember(editing) { mutableStateOf(editing.category) }
+        var editDateMillis by remember(editing) { mutableLongStateOf(editing.date) }
+        var isEditCatExpanded by remember { mutableStateOf(false) }
+
+        val editCal = Calendar.getInstance().apply { timeInMillis = editDateMillis }
+        val editDatePicker = DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                val c = Calendar.getInstance().apply {
+                    set(Calendar.YEAR, year)
+                    set(Calendar.MONTH, month)
+                    set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                }
+                editDateMillis = c.timeInMillis
+            },
+            editCal.get(Calendar.YEAR),
+            editCal.get(Calendar.MONTH),
+            editCal.get(Calendar.DAY_OF_MONTH)
+        )
+
+        AlertDialog(
+            onDismissRequest = { expenseToEdit = null },
+            title = { Text("Edit Transaksi") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = SimpleDateFormat("dd MMMM yyyy", Locale("id", "ID")).format(Date(editDateMillis)),
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Tanggal") },
+                        trailingIcon = {
+                            TextButton(onClick = { editDatePicker.show() }) { Text("Ubah") }
+                        },
+                        modifier = Modifier.fillMaxWidth().clickable { editDatePicker.show() }
+                    )
+                    OutlinedTextField(
+                        value = editTitle,
+                        onValueChange = { editTitle = it },
+                        label = { Text("Nama Pengeluaran") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = editAmount,
+                        onValueChange = { input ->
+                            val digits = input.filter { it.isDigit() }
+                            if (digits.length <= 12) editAmount = digits
+                        },
+                        label = { Text("Jumlah (Rp)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        visualTransformation = ThousandsSeparatorVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    ExposedDropdownMenuBox(
+                        expanded = isEditCatExpanded,
+                        onExpandedChange = { isEditCatExpanded = !isEditCatExpanded },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedTextField(
+                            value = editCategory,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Kategori") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isEditCatExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = isEditCatExpanded,
+                            onDismissRequest = { isEditCatExpanded = false }
+                        ) {
+                            defaultCategories.forEach { cat ->
+                                DropdownMenuItem(
+                                    text = { Text(cat) },
+                                    onClick = {
+                                        editCategory = cat
+                                        isEditCatExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val parsed = editAmount.toDoubleOrNull() ?: 0.0
+                    if (editTitle.isNotBlank() && parsed > 0) {
+                        onUpdateExpense(
+                            editing.copy(
+                                title = editTitle.trim(),
+                                amount = parsed,
+                                category = editCategory,
+                                date = editDateMillis
+                            )
+                        )
+                        expenseToEdit = null
+                    }
+                }) {
+                    Text("Simpan")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { expenseToEdit = null }) {
+                    Text("Batal")
+                }
+            }
+        )
     }
 
     if (expenseToDelete != null) {
@@ -1190,10 +1337,10 @@ fun RecordAndHistoryTab(
 }
 
 // -------------------------------------------------------------------------------------
-// KOMPONEN & UTILITAS
+// KOMPONEN ITEM TRANSAKSI & FORMATTER
 // -------------------------------------------------------------------------------------
 @Composable
-fun ExpenseItem(expense: Expense, onDelete: () -> Unit) {
+fun ExpenseItem(expense: Expense, onEdit: () -> Unit, onDelete: () -> Unit) {
     val timeString = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(expense.date))
     val categoryInfo = getCategoryInfo(expense.category)
 
@@ -1235,6 +1382,9 @@ fun ExpenseItem(expense: Expense, onDelete: () -> Unit) {
                 )
             }
 
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit Transaksi", tint = MaterialTheme.colorScheme.outline)
+            }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Default.Delete, contentDescription = "Hapus Transaksi", tint = MaterialTheme.colorScheme.outline)
             }
@@ -1272,13 +1422,13 @@ fun getDateGroupLabel(dateMillis: Long): String {
     }
 }
 
-fun exportExpensesToCsv(context: Context, expenses: List<Expense>) {
+fun exportExpensesToCsv(context: Context, expenses: List<Expense>, prefixName: String = "Laporan") {
     if (expenses.isEmpty()) {
         Toast.makeText(context, "Tidak ada data pengeluaran untuk diekspor", Toast.LENGTH_SHORT).show()
         return
     }
     try {
-        val fileName = "Laporan_Pengeluaran_${System.currentTimeMillis()}.csv"
+        val fileName = "${prefixName}_${System.currentTimeMillis()}.csv"
         val csvFile = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), fileName)
 
         csvFile.bufferedWriter().use { writer ->
