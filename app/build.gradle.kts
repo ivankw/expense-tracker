@@ -13,7 +13,6 @@ android {
         minSdk = 26
         targetSdk = 35
 
-        // Mengambil versi dinamis dari CI/CD GitHub Actions atau default ke 1 / 1.0.0
         versionCode = project.findProperty("customVersionCode")?.toString()?.toIntOrNull() ?: 1
         versionName = project.findProperty("customVersionName")?.toString() ?: "1.0.0"
 
@@ -22,7 +21,6 @@ android {
             useSupportLibrary = true
         }
 
-        // Khusus arsitektur 64-bit HP modern (memangkas ukuran APK hingga ~60-70%)
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
@@ -42,7 +40,6 @@ android {
 
     buildTypes {
         release {
-            // Penghapusan kode mati & pengecilan biner R8
             isMinifyEnabled = true
             isShrinkResources = true
 
@@ -98,22 +95,23 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    // Room Database (SQLite Engine)
+    // Room Database
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // DataStore Preferences (Income Storage & App Theme)
+    // DataStore Preferences
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     // Kotlin Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // Biometric Authentication
-    implementation("androidx.biometric:biometric:1.2.0-alpha05")
+    // Networking (OkHttp)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // WorkManager (Background Tasks & Notifikasi)
+    // Biometric & WorkManager
+    implementation("androidx.biometric:biometric:1.2.0-alpha05")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     // Debugging Tooling
