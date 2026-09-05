@@ -8,12 +8,17 @@ android {
     namespace = "com.example.pengeluaran"
     compileSdk = 34
 
-    defaultConfig {
+   defaultConfig {
         applicationId = "com.example.pengeluaran"
         minSdk = 31
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.0.1"
+
+        // Ambil versi dinamis yang dikirim oleh GitHub Actions (-PcustomVersionCode & -PcustomVersionName)
+        val passedVersionCode = project.findProperty("customVersionCode")?.toString()?.toIntOrNull() ?: 1
+        val passedVersionName = project.findProperty("customVersionName")?.toString() ?: "1.0.0"
+
+        versionCode = passedVersionCode
+        versionName = passedVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
