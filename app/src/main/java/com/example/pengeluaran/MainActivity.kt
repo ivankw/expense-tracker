@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -20,13 +21,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.pengeluaran.data.Expense
 import com.example.pengeluaran.util.ApkDownloader
 import com.example.pengeluaran.util.UpdateChecker
-import com.example.pengeluaran.util.UpdateInfo
+import com.example.pengeluaran.util.UpdateResult
+import com.example.pengeluaran.util.UpdateStatus
 import com.example.pengeluaran.viewmodel.ExpenseViewModel
 import kotlinx.coroutines.launch
 import java.text.DecimalFormat
@@ -58,7 +59,6 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    // Daftar Kategori Sesuai Permintaan
     val categoryList = listOf(
         "Debt",
         "Food",
@@ -70,26 +70,26 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
         "Investment"
     )
 
-    // State data transaksi
     val expenseList by viewModel.expenses.collectAsState()
     var title by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf(categoryList[1]) } // Default: Food
+    var selectedCategory by remember { mutableStateOf(categoryList[1]) }
     var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
 
     val totalExpense = expenseList.sumOf { it.amount }
 
-    // State update aplikasi
-    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    // State pengecekan versi
+    var updateResult by remember { mutableStateOf<UpdateResult?>(null) }
     var showUpdateDialog by remember { mutableStateOf(false) }
+    var showUpToDateDialog by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     val currentVersion = remember { UpdateChecker.getCurrentVersion(context) }
 
-    // Cek update otomatis saat aplikasi dibuka
+    // Jalankan pengecekan otomatis saat aplikasi pertama kali dibuka (run up pertama)
     LaunchedEffect(Unit) {
-        val result = UpdateChecker.checkLatestRelease(context)
-        if (result.hasUpdate) {
-            updateInfo = result
+        val res = UpdateChecker.checkRelease(context)
+        updateResult = res
+        if (res.status == UpdateStatus.HAS_UPDATE) {
             showUpdateDialog = true
         }
     }
@@ -119,18 +119,24 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
                             leadingIcon = { Icon(Icons.Default.SystemUpdate, contentDescription = null) },
                             onClick = {
                                 showMenu = false
-                                Toast.makeText(context, "Memeriksa pembaruan...", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Memeriksa versi di repo...", Toast.LENGTH_SHORT).show()
                                 coroutineScope.launch {
-                                    val result = UpdateChecker.checkLatestRelease(context)
-                                    if (result.hasUpdate) {
-                                        updateInfo = result
-                                        showUpdateDialog = true
-                                    } else {
-                                        Toast.makeText(
-                                            context,
-                                            "Aplikasi sudah versi terbaru ($currentVersion)",
-                                            Toast.LENGTH_LONG
-                                        ).show()
+                                    val res = UpdateChecker.checkRelease(context)
+                                    updateResult = res
+                                    when (res.status) {
+                                        UpdateStatus.HAS_UPDATE -> {
+                                            showUpdateDialog = true
+                                        }
+                                        UpdateStatus.UP_TO_DATE -> {
+                                            showUpToDateDialog = true
+                                        }
+                                        UpdateStatus.ERROR -> {
+                                            Toast.makeText(
+                                                context,
+                                                "Error: ${res.errorMessage}",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
                                     }
                                 }
                             }
@@ -172,11 +178,10 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Form Input Jumlah (Keyboard Numpad Angka Murni)
+            // Form Input Jumlah (Numerik)
             OutlinedTextField(
                 value = amount,
                 onValueChange = { input ->
-                    // Hanya izinkan karakter angka 0-9
                     if (input.all { it.isDigit() }) {
                         amount = input
                     }
@@ -188,7 +193,7 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Dropdown Pilihan Kategori
+            // Dropdown Kategori
             ExposedDropdownMenuBox(
                 expanded = isCategoryDropdownExpanded,
                 onExpandedChange = { isCategoryDropdownExpanded = !isCategoryDropdownExpanded },
@@ -242,7 +247,7 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
             Text("Histori Transaksi", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Daftar Histori Transaksi
+            // Daftar Histori
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxSize()
@@ -253,17 +258,18 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
             }
         }
 
-        // Dialog Pembaruan
-        if (showUpdateDialog && updateInfo != null) {
+        // 1. DIALOG: JIKA ADA VERSI TERBARU DI REPO
+        if (showUpdateDialog && updateResult != null) {
             AlertDialog(
                 onDismissRequest = { showUpdateDialog = false },
-                title = { Text("Pembaruan Tersedia (${updateInfo?.latestVersion})") },
+                title = { Text("Pembaruan Tersedia") },
                 text = {
                     Column {
-                        Text("Versi Anda saat ini: $currentVersion\n")
+                        Text("Versi Terpasang: ${updateResult?.currentVersion}")
+                        Text("Versi di Repo: ${updateResult?.latestVersion}\n", fontWeight = FontWeight.Bold)
                         Text("Catatan Pembaruan:")
                         Text(
-                            updateInfo?.releaseNotes ?: "-",
+                            updateResult?.releaseNotes ?: "-",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -272,22 +278,44 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
                     Button(
                         onClick = {
                             showUpdateDialog = false
-                            val downloadUrl = updateInfo?.downloadUrl
+                            val downloadUrl = updateResult?.downloadUrl
                             if (!downloadUrl.isNullOrBlank()) {
                                 ApkDownloader.downloadAndInstall(
                                     context = context,
                                     downloadUrl = downloadUrl,
-                                    fileName = "ExpenseTracker-${updateInfo?.latestVersion}.apk"
+                                    fileName = "ExpenseTracker-${updateResult?.latestVersion}.apk"
                                 )
+                            } else {
+                                Toast.makeText(context, "URL file APK tidak ditemukan di rilis.", Toast.LENGTH_SHORT).show()
                             }
                         }
                     ) {
-                        Text("Update Sekarang")
+                        Text("Update")
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showUpdateDialog = false }) {
                         Text("Nanti Saja")
+                    }
+                }
+            )
+        }
+
+        // 2. DIALOG: JIKA VERSI SAMA DENGAN REPO
+        if (showUpToDateDialog && updateResult != null) {
+            AlertDialog(
+                onDismissRequest = { showUpToDateDialog = false },
+                icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                title = { Text("Versi app sudah paling baru.") },
+                text = {
+                    Column {
+                        Text("Versi aplikasi saat ini: ${updateResult?.currentVersion}")
+                        Text("Versi rilis di repository: ${updateResult?.latestVersion}")
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showUpToDateDialog = false }) {
+                        Text("OK")
                     }
                 }
             )
@@ -327,7 +355,6 @@ fun ExpenseItem(expense: Expense, onDelete: () -> Unit) {
     }
 }
 
-// Fungsi formatter "Rp 7.000" tanpa desimal ",00"
 fun formatRupiah(number: Double): String {
     val symbols = DecimalFormatSymbols(Locale("in", "ID")).apply {
         currencySymbol = "Rp "
