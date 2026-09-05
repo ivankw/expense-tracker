@@ -66,6 +66,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
 
+    // Jetpack DataStore Preferences
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
+
     // Jetpack Compose
     val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
     implementation(composeBom)
