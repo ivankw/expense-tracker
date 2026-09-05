@@ -1,12 +1,17 @@
 package com.example.pengeluaran
 
+import android.app.DatePickerDialog
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
+import android.os.Environment
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -16,24 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AddCircle
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.CardGiftcard
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CreditCard
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.ReceiptLong
-import androidx.compose.material.icons.filled.Restaurant
-import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -54,6 +42,7 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import com.example.pengeluaran.data.Expense
 import com.example.pengeluaran.util.ApkDownloader
 import com.example.pengeluaran.util.UpdateChecker
@@ -61,6 +50,7 @@ import com.example.pengeluaran.util.UpdateResult
 import com.example.pengeluaran.util.UpdateStatus
 import com.example.pengeluaran.viewmodel.ExpenseViewModel
 import kotlinx.coroutines.launch
+import java.io.File
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.text.SimpleDateFormat
@@ -135,6 +125,14 @@ fun MainScreen(viewModel: ExpenseViewModel) {
                         onDismissRequest = { showMenu = false }
                     ) {
                         DropdownMenuItem(
+                            text = { Text("Ekspor ke CSV (Excel)") },
+                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                            onClick = {
+                                showMenu = false
+                                exportExpensesToCsv(context, expenseList)
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Cek Pembaruan") },
                             leadingIcon = { Icon(Icons.Default.SystemUpdate, contentDescription = null) },
                             onClick = {
@@ -195,8 +193,8 @@ fun MainScreen(viewModel: ExpenseViewModel) {
         ) {
             if (selectedTab == 0) {
                 RecordExpenseTab(
-                    onSaveExpense = { title, amount, category ->
-                        viewModel.addExpense(title, amount, category)
+                    onSaveExpense = { title, amount, category, dateMillis ->
+                        viewModel.addExpense(title, amount, category, dateMillis)
                         Toast.makeText(context, "Transaksi tersimpan!", Toast.LENGTH_SHORT).show()
                         selectedTab = 1
                     }
@@ -272,7 +270,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordExpenseTab(
-    onSaveExpense: (String, Double, String) -> Unit
+    onSaveExpense: (String, Double, String, Long) -> Unit
 ) {
     val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -293,6 +291,24 @@ fun RecordExpenseTab(
     var amount by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(categoryList[1]) }
     var isCategoryExpanded by remember { mutableStateOf(false) }
+    var selectedDateMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    // Dialog Kalender
+    val dateCalendar = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
+    val datePickerDialog = DatePickerDialog(
+        context,
+        { _, year, month, dayOfMonth ->
+            val newCal = Calendar.getInstance().apply {
+                set(Calendar.YEAR, year)
+                set(Calendar.MONTH, month)
+                set(Calendar.DAY_OF_MONTH, dayOfMonth)
+            }
+            selectedDateMillis = newCal.timeInMillis
+        },
+        dateCalendar.get(Calendar.YEAR),
+        dateCalendar.get(Calendar.MONTH),
+        dateCalendar.get(Calendar.DAY_OF_MONTH)
+    )
 
     fun submitExpense() {
         val parsedAmount = amount.toDoubleOrNull() ?: 0.0
@@ -302,9 +318,10 @@ fun RecordExpenseTab(
             Toast.makeText(context, "Nominal pengeluaran harus lebih dari 0!", Toast.LENGTH_SHORT).show()
         } else {
             keyboardController?.hide()
-            onSaveExpense(title.trim(), parsedAmount, selectedCategory)
+            onSaveExpense(title.trim(), parsedAmount, selectedCategory, selectedDateMillis)
             title = ""
             amount = ""
+            selectedDateMillis = System.currentTimeMillis()
         }
     }
 
@@ -315,6 +332,23 @@ fun RecordExpenseTab(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text("Catat Pengeluaran Baru", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+
+        // Pilihan Tanggal Manual (DatePicker)
+        OutlinedTextField(
+            value = SimpleDateFormat("dd MMMM yyyy", Locale("id", "ID")).format(Date(selectedDateMillis)),
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Tanggal Transaksi") },
+            leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null) },
+            trailingIcon = {
+                TextButton(onClick = { datePickerDialog.show() }) {
+                    Text("Ubah")
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { datePickerDialog.show() }
+        )
 
         OutlinedTextField(
             value = title,
@@ -413,13 +447,15 @@ fun DashboardTab(
     onDelete: (Expense) -> Unit
 ) {
     var selectedFilter by remember { mutableStateOf(TimeFilter.THIS_MONTH) }
+    var isPrivacyMode by remember { mutableStateOf(false) } // Sensor Saldo
+    var searchQuery by remember { mutableStateOf("") } // Pencarian Transaksi
     var showIncomeDialog by remember { mutableStateOf(false) }
     var incomeInput by remember { mutableStateOf("") }
     var expenseToDelete by remember { mutableStateOf<Expense?>(null) }
 
-    // 1. Logika Filter Waktu
+    // 1. Filter Rentang Waktu
     val now = Calendar.getInstance()
-    val filteredExpenses = remember(expenses, selectedFilter) {
+    val timeFilteredExpenses = remember(expenses, selectedFilter) {
         expenses.filter { item ->
             val itemCal = Calendar.getInstance().apply { timeInMillis = item.date }
             when (selectedFilter) {
@@ -436,11 +472,22 @@ fun DashboardTab(
         }
     }
 
-    val totalExpense = filteredExpenses.sumOf { it.amount }
+    // 2. Filter Pencarian Teks
+    val finalExpenses = remember(timeFilteredExpenses, searchQuery) {
+        if (searchQuery.isBlank()) {
+            timeFilteredExpenses
+        } else {
+            timeFilteredExpenses.filter {
+                it.title.contains(searchQuery, ignoreCase = true) ||
+                        it.category.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
+
+    val totalExpense = finalExpenses.sumOf { it.amount }
     val saving = income - totalExpense
     val isDeficit = saving < 0
 
-    // Rasio Anggaran (Progress Bar)
     val expenseRatio = if (income > 0) (totalExpense / income).toFloat().coerceIn(0f, 1f) else 0f
     val budgetPercent = if (income > 0) ((totalExpense / income) * 100).toInt() else 0
     val budgetBarColor = when {
@@ -449,24 +496,21 @@ fun DashboardTab(
         else -> Color(0xFF4CAF50)
     }
 
-    // 2. Metrik Rata-rata Harian
-    val distinctDays = filteredExpenses.map {
+    val distinctDays = finalExpenses.map {
         val c = Calendar.getInstance().apply { timeInMillis = it.date }
         "${c.get(Calendar.YEAR)}-${c.get(Calendar.DAY_OF_YEAR)}"
     }.distinct().size.coerceAtLeast(1)
     val dailyAverage = totalExpense / distinctDays
 
-    // 3. Ringkasan Pengeluaran per Kategori (Top Categories)
-    val categoryTotals = remember(filteredExpenses) {
-        filteredExpenses.groupBy { it.category }
+    val categoryTotals = remember(finalExpenses) {
+        finalExpenses.groupBy { it.category }
             .mapValues { entry -> entry.value.sumOf { it.amount } }
             .toList()
             .sortedByDescending { it.second }
     }
 
-    // 4. Pengelompokan Histori berdasarkan Hari
-    val groupedExpenses = remember(filteredExpenses) {
-        filteredExpenses.groupBy { getDateGroupLabel(it.date) }
+    val groupedExpenses = remember(finalExpenses) {
+        finalExpenses.groupBy { getDateGroupLabel(it.date) }
     }
 
     Column(
@@ -474,7 +518,7 @@ fun DashboardTab(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // --- KARTU UTAMA DENGAN GRADASI WARNA (VIRTUAL CARD) ---
+        // --- KARTU UTAMA GRADASI DENGAN TOGGLE SENSOR SALDO ---
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -498,17 +542,27 @@ fun DashboardTab(
                         Column {
                             Text("Total Pemasukan", color = Color(0xFF94A3B8), style = MaterialTheme.typography.labelSmall)
                             Text(
-                                text = formatRupiah(income),
+                                text = formatRupiahWithPrivacy(income, isPrivacyMode),
                                 color = Color.White,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold
                             )
                         }
-                        IconButton(onClick = {
-                            incomeInput = if (income > 0) income.toLong().toString() else ""
-                            showIncomeDialog = true
-                        }) {
-                            Icon(Icons.Default.Edit, contentDescription = "Edit Pemasukan", tint = Color.White)
+                        Row {
+                            // Tombol Sensor Saldo (Eye Icon)
+                            IconButton(onClick = { isPrivacyMode = !isPrivacyMode }) {
+                                Icon(
+                                    imageVector = if (isPrivacyMode) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = "Sensor Saldo",
+                                    tint = Color.White
+                                )
+                            }
+                            IconButton(onClick = {
+                                incomeInput = if (income > 0) income.toLong().toString() else ""
+                                showIncomeDialog = true
+                            }) {
+                                Icon(Icons.Default.Edit, contentDescription = "Edit Pemasukan", tint = Color.White)
+                            }
                         }
                     }
 
@@ -521,7 +575,7 @@ fun DashboardTab(
                         Column {
                             Text("Total Pengeluaran", color = Color(0xFF94A3B8), style = MaterialTheme.typography.labelSmall)
                             Text(
-                                text = formatRupiah(totalExpense),
+                                text = formatRupiahWithPrivacy(totalExpense, isPrivacyMode),
                                 color = Color(0xFFF87171),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
@@ -534,7 +588,7 @@ fun DashboardTab(
                                 style = MaterialTheme.typography.labelSmall
                             )
                             Text(
-                                text = formatRupiah(saving),
+                                text = formatRupiahWithPrivacy(saving, isPrivacyMode),
                                 color = if (isDeficit) Color(0xFFF87171) else Color(0xFF4ADE80),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
@@ -556,7 +610,7 @@ fun DashboardTab(
                                 style = MaterialTheme.typography.labelSmall
                             )
                             Text(
-                                text = "Rata-rata: ${formatRupiah(dailyAverage)}/hari",
+                                text = "Rata-rata: ${formatRupiahWithPrivacy(dailyAverage, isPrivacyMode)}/hari",
                                 color = Color(0xFF94A3B8),
                                 style = MaterialTheme.typography.labelSmall
                             )
@@ -576,7 +630,7 @@ fun DashboardTab(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // --- FILTER WAKTU (CHIPS) ---
         Row(
@@ -594,6 +648,26 @@ fun DashboardTab(
                 )
             }
         }
+
+        // --- KOLOM PENCARIAN RIWAYAT (SEARCH BAR) ---
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = { Text("Cari nama transaksi atau kategori...") },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(Icons.Default.Clear, contentDescription = "Hapus Pencarian")
+                    }
+                }
+            },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        )
 
         // --- BREAKDOWN PENGELUARAN PER KATEGORI ---
         if (categoryTotals.isNotEmpty()) {
@@ -625,7 +699,7 @@ fun DashboardTab(
                             Spacer(modifier = Modifier.width(8.dp))
                             Column {
                                 Text(catName, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                Text("${formatRupiah(catAmount)} ($catPercent%)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                                Text("${formatRupiahWithPrivacy(catAmount, isPrivacyMode)} ($catPercent%)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                             }
                         }
                     }
@@ -636,7 +710,7 @@ fun DashboardTab(
         Spacer(modifier = Modifier.height(12.dp))
 
         // --- HISTORI TRANSAKSI DENGAN STICKY HEADER TANGGAL ---
-        if (filteredExpenses.isEmpty()) {
+        if (finalExpenses.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -654,8 +728,8 @@ fun DashboardTab(
                         tint = MaterialTheme.colorScheme.outline
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Tidak ada transaksi pada periode ini", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text("Ganti filter atau catat pengeluaran baru", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Text("Tidak ada transaksi ditemukan", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text("Coba ubah kata kunci atau filter waktu", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
             }
         } else {
@@ -683,7 +757,7 @@ fun DashboardTab(
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Text(
-                                text = "Total: ${formatRupiah(dailyTotal)}",
+                                text = "Total: ${formatRupiahWithPrivacy(dailyTotal, isPrivacyMode)}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.outline
                             )
@@ -691,7 +765,11 @@ fun DashboardTab(
                     }
 
                     items(itemsInDate, key = { it.id }) { item ->
-                        ExpenseItem(expense = item, onDelete = { expenseToDelete = item })
+                        ExpenseItem(
+                            expense = item,
+                            isPrivacyMode = isPrivacyMode,
+                            onDelete = { expenseToDelete = item }
+                        )
                     }
                 }
             }
@@ -756,7 +834,7 @@ fun DashboardTab(
 }
 
 @Composable
-fun ExpenseItem(expense: Expense, onDelete: () -> Unit) {
+fun ExpenseItem(expense: Expense, isPrivacyMode: Boolean, onDelete: () -> Unit) {
     val timeString = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(expense.date))
     val categoryInfo = getCategoryInfo(expense.category)
 
@@ -792,7 +870,7 @@ fun ExpenseItem(expense: Expense, onDelete: () -> Unit) {
                 Text("${expense.category} • $timeString", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = formatRupiah(expense.amount),
+                    text = formatRupiahWithPrivacy(expense.amount, isPrivacyMode),
                     color = MaterialTheme.colorScheme.error,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -821,7 +899,6 @@ fun getCategoryInfo(category: String): CategoryInfo {
     }
 }
 
-// Label pengelompokan tanggal histori
 fun getDateGroupLabel(dateMillis: Long): String {
     val now = Calendar.getInstance()
     val itemCal = Calendar.getInstance().apply { timeInMillis = dateMillis }
@@ -833,6 +910,45 @@ fun getDateGroupLabel(dateMillis: Long): String {
         isSameYear && dayDiff == 0 -> "Hari Ini"
         isSameYear && dayDiff == 1 -> "Kemarin"
         else -> SimpleDateFormat("dd MMMM yyyy", Locale("id", "ID")).format(Date(dateMillis))
+    }
+}
+
+// Fungsi Utilitas Ekspor ke Berkas CSV dan Share Sheet
+fun exportExpensesToCsv(context: Context, expenses: List<Expense>) {
+    if (expenses.isEmpty()) {
+        Toast.makeText(context, "Tidak ada data pengeluaran untuk diekspor", Toast.LENGTH_SHORT).show()
+        return
+    }
+    try {
+        val fileName = "Laporan_Pengeluaran_${System.currentTimeMillis()}.csv"
+        val csvFile = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), fileName)
+
+        csvFile.bufferedWriter().use { writer ->
+            writer.write("ID,Tanggal,Waktu,Judul Pengeluaran,Kategori,Nominal (Rp)\n")
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+            expenses.forEach { item ->
+                val date = Date(item.date)
+                val cleanTitle = item.title.replace("\"", "\"\"")
+                val cleanCat = item.category.replace("\"", "\"\"")
+                writer.write("${item.id},${dateFormat.format(date)},${timeFormat.format(date)},\"$cleanTitle\",\"$cleanCat\",${item.amount.toLong()}\n")
+            }
+        }
+
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.provider",
+            csvFile
+        )
+
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/csv"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(shareIntent, "Bagikan Laporan CSV"))
+    } catch (e: Exception) {
+        Toast.makeText(context, "Gagal mengekspor data: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
     }
 }
 
@@ -887,4 +1003,8 @@ fun formatRupiah(number: Double): String {
     }
     val formatter = DecimalFormat("Rp #,###", symbols)
     return if (number == 0.0) "Rp 0" else formatter.format(number)
+}
+
+fun formatRupiahWithPrivacy(number: Double, hide: Boolean): String {
+    return if (hide) "Rp •••••••" else formatRupiah(number)
 }
