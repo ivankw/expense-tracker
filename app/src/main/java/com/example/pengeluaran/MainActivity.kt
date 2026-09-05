@@ -1,10 +1,14 @@
 package com.example.pengeluaran
 
+import android.app.DatePickerDialog
 import android.os.Bundle
+import android.widget.DatePicker
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,10 +18,13 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -162,7 +169,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
         ) {
             if (selectedTab == 0) {
                 RecordExpenseTab(
-                    onSaveExpense = { title, amount, category ->
+                    onSaveExpense = { title, amount, category, dateMillis ->
                         viewModel.addExpense(title, amount, category)
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         Toast.makeText(context, "Transaksi berhasil disimpan!", Toast.LENGTH_SHORT).show()
@@ -227,6 +234,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
                             showUpdateDialog = false
                             val downloadUrl = updateResult?.downloadUrl
                             if (!downloadUrl.isNullOrBlank()) {
+                                Toast.makeText(context, "Mulai mengunduh file update...", Toast.LENGTH_SHORT).show()
                                 ApkDownloader.downloadAndInstall(
                                     context = context,
                                     downloadUrl = downloadUrl,
@@ -269,13 +277,14 @@ fun MainScreen(viewModel: ExpenseViewModel) {
 }
 
 // =====================================================================================
-// MENU SEBELAH KIRI: FORM CATAT TRANSAKSI (DENGAN QUICK CHIPS & SMART ACTIONS)
+// MENU SEBELAH KIRI: FORM CATAT TRANSAKSI (DILENGKAPI DATE PICKER)
 // =====================================================================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordExpenseTab(
-    onSaveExpense: (String, Double, String) -> Unit
+    onSaveExpense: (String, Double, String, Long) -> Unit
 ) {
+    val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val categoryList = listOf(
         "Debt",
@@ -293,6 +302,11 @@ fun RecordExpenseTab(
     var selectedCategory by remember { mutableStateOf(categoryList[1]) }
     var isCategoryExpanded by remember { mutableStateOf(false) }
 
+    // State Tanggal (Default: Hari Ini)
+    var selectedDateMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val dateFormatter = remember { SimpleDateFormat("dd MMMM yyyy", Locale("in", "ID")) }
+    val displayDate = remember(selectedDateMillis) { dateFormatter.format(Date(selectedDateMillis)) }
+
     val displayAmount = remember(rawAmountDigits) {
         formatNumberWithDots(rawAmountDigits)
     }
@@ -300,11 +314,27 @@ fun RecordExpenseTab(
     val submitAction = {
         val parsedAmount = rawAmountDigits.toDoubleOrNull() ?: 0.0
         if (title.isNotBlank() && parsedAmount > 0) {
-            onSaveExpense(title, parsedAmount, selectedCategory)
+            onSaveExpense(title, parsedAmount, selectedCategory, selectedDateMillis)
             title = ""
             rawAmountDigits = ""
+            selectedDateMillis = System.currentTimeMillis()
         }
     }
+
+    // Inisialisasi Android DatePickerDialog
+    val calendar = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
+    val datePickerDialog = DatePickerDialog(
+        context,
+        { _: DatePicker, year: Int, month: Int, dayOfMonth: Int ->
+            val updatedCal = Calendar.getInstance().apply {
+                set(year, month, dayOfMonth)
+            }
+            selectedDateMillis = updatedCal.timeInMillis
+        },
+        calendar.get(Calendar.YEAR),
+        calendar.get(Calendar.MONTH),
+        calendar.get(Calendar.DAY_OF_MONTH)
+    )
 
     Column(
         modifier = Modifier
@@ -347,7 +377,7 @@ fun RecordExpenseTab(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // QUICK-AMOUNT CHIPS ROW
+        // Quick Amount Chips
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -383,6 +413,7 @@ fun RecordExpenseTab(
             }
         }
 
+        // Pilihan Kategori Dropdown
         ExposedDropdownMenuBox(
             expanded = isCategoryExpanded,
             onExpandedChange = { isCategoryExpanded = !isCategoryExpanded },
@@ -416,6 +447,20 @@ fun RecordExpenseTab(
             }
         }
 
+        // Input Tanggal Transaksi
+        OutlinedTextField(
+            value = displayDate,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Tanggal Transaksi") },
+            trailingIcon = {
+                IconButton(onClick = { datePickerDialog.show() }) {
+                    Icon(Icons.Default.CalendarMonth, contentDescription = "Pilih Tanggal")
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
+
         Spacer(modifier = Modifier.height(4.dp))
 
         Button(
@@ -430,14 +475,28 @@ fun RecordExpenseTab(
 }
 
 // =====================================================================================
-// MENU SEBELAH KANAN: DASHBOARD FINANSIAL & HISTORI
+// MENU SEBELAH KANAN: DASHBOARD FINANSIAL, SEARCH BAR & SWIPE-TO-DISMISS
 // =====================================================================================
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardTab(
     expenses: List<Expense>,
     incomeAmount: Double,
     onRequestDelete: (Expense) -> Unit
 ) {
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredExpenses = remember(expenses, searchQuery) {
+        if (searchQuery.isBlank()) {
+            expenses
+        } else {
+            expenses.filter {
+                it.title.contains(searchQuery, ignoreCase = true) ||
+                it.category.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
+
     val totalExpense = expenses.sumOf { it.amount }
     val remainingBudget = incomeAmount - totalExpense
     val expenseRatio = if (incomeAmount > 0) (totalExpense / incomeAmount).toFloat().coerceIn(0f, 1f) else 0f
@@ -524,16 +583,35 @@ fun DashboardTab(
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // SEARCH BAR HISTORI
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = { Text("Cari transaksi atau kategori...") },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(Icons.Default.Clear, contentDescription = "Clear")
+                    }
+                }
+            },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = "Histori Transaksi (${expenses.size})",
+            text = "Histori Transaksi (${filteredExpenses.size})",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (expenses.isEmpty()) {
+        if (filteredExpenses.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -541,7 +619,7 @@ fun DashboardTab(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Belum ada transaksi pengeluaran",
+                    text = if (searchQuery.isBlank()) "Belum ada transaksi pengeluaran" else "Tidak ada transaksi yang cocok",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.outline
                 )
@@ -553,8 +631,11 @@ fun DashboardTab(
                     .fillMaxSize()
                     .weight(1f)
             ) {
-                items(expenses, key = { it.id }) { item ->
-                    ExpenseItem(expense = item, onDelete = { onRequestDelete(item) })
+                items(filteredExpenses, key = { it.id }) { item ->
+                    SwipeableExpenseItem(
+                        expense = item,
+                        onDelete = { onRequestDelete(item) }
+                    )
                 }
             }
         }
@@ -562,8 +643,61 @@ fun DashboardTab(
 }
 
 // =====================================================================================
-// KOMPONEN ITEM HISTORI TRANSAKSI
+// KOMPONEN ITEM HISTORI DENGAN SWIPE-TO-DISMISS
 // =====================================================================================
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SwipeableExpenseItem(
+    expense: Expense,
+    onDelete: () -> Unit
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { dismissValue ->
+            if (dismissValue == SwipeToDismissBoxValue.EndToStart || dismissValue == SwipeToDismissBoxValue.StartToEnd) {
+                onDelete()
+                false // Menahan agar posisi tidak langsung hilang sebelum dialog konfirmasi ditekan
+            } else {
+                false
+            }
+        }
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = true,
+        enableDismissFromEndToStart = true,
+        backgroundContent = {
+            val color by animateColorAsState(
+                targetValue = if (dismissState.targetValue != SwipeToDismissBoxValue.Settled) {
+                    MaterialTheme.colorScheme.errorContainer
+                } else {
+                    Color.Transparent
+                },
+                label = "SwipeBackgroundColor"
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(color, shape = CardDefaults.shape)
+                    .padding(horizontal = 20.dp),
+                contentAlignment = if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
+                    Alignment.CenterStart
+                } else {
+                    Alignment.CenterEnd
+                }
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Hapus",
+                    tint = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
+    ) {
+        ExpenseItem(expense = expense, onDelete = onDelete)
+    }
+}
+
 @Composable
 fun ExpenseItem(expense: Expense, onDelete: () -> Unit) {
     val dateString = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(expense.date))
