@@ -92,7 +92,7 @@ val defaultCategories = listOf(
     "Electricity",
     "Ecommerce",
     "Investment",
-    "Traveling" // Kategori baru
+    "Traveling"
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -101,7 +101,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Dashboard, 1 = Catat, 2 = Tagihan Rutin
+    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Dashboard, 1 = Catat, 2 = Tagihan
 
     val expenseList by viewModel.expenses.collectAsState()
     val recurringBills by viewModel.recurringBills.collectAsState()
@@ -243,6 +243,10 @@ fun MainScreen(viewModel: ExpenseViewModel) {
                         onPayBill = { bill ->
                             viewModel.payRecurringBill(bill)
                             Toast.makeText(context, "'${bill.title}' telah dicatat ke pengeluaran!", Toast.LENGTH_SHORT).show()
+                        },
+                        onUndoPayBill = { bill ->
+                            viewModel.undoPayRecurringBill(bill)
+                            Toast.makeText(context, "Status bayar '${bill.title}' dibatalkan & transaksi dihapus!", Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -338,7 +342,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
 }
 
 // -------------------------------------------------------------------------------------
-// 1. TAB DASHBOARD: DONUT CHART, RASIO 70/20/10 & PLAFON BUDGET VS ACTUAL
+// 1. DASHBOARD: SISA GAJI/INVESTASI PADA RASIO 70/20/10
 // -------------------------------------------------------------------------------------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -410,7 +414,7 @@ fun DashboardReportsTab(
             .sortedByDescending { it.second }
     }
 
-    // Perhitungan Rasio Finansial 70 / 20 / 10
+    // Perhitungan Rasio 70 / 20 / 10
     val needsCategories = setOf("Food", "Electricity", "Transportation/gas", "Home", "Debt")
     val wantsCategories = setOf("Ecommerce", "Gifts", "Traveling")
     val totalNeeds = filteredExpenses.filter { it.category in needsCategories }.sumOf { it.amount }
@@ -428,7 +432,6 @@ fun DashboardReportsTab(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Virtual Card Saldo Utama
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -672,7 +675,7 @@ fun DashboardReportsTab(
             }
         }
 
-        // KARTU EVALUASI RASIO BUDGETING 70 / 20 / 10
+        // KARTU EVALUASI 70 / 20 / 10 (LABEL DIPERBARUI KE: Sisa Gaji/Investasi)
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -684,7 +687,7 @@ fun DashboardReportsTab(
                     Text("Evaluasi terhadap target pemasukan bulanan", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // 1. Kebutuhan Pokok (70%)
+                    // 1. Kebutuhan & Tagihan (70%)
                     Column {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Kebutuhan & Tagihan (Target ≤70%)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
@@ -701,7 +704,7 @@ fun DashboardReportsTab(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // 2. Keinginan & Traveling (20%)
+                    // 2. Gaya Hidup & Traveling (20%)
                     Column {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Gaya Hidup & Traveling (Target ≤20%)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
@@ -718,10 +721,10 @@ fun DashboardReportsTab(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // 3. Tabungan & Investasi (10%)
+                    // 3. Sisa Gaji/Investasi (10%)
                     Column {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Tabungan & Investasi (Target ≥10%)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                            Text("Sisa Gaji/Investasi (Target ≥10%)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
                             Text("${formatRupiah(totalInvestSavings)} ($investPercent%)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = if (investPercent >= 10) Color(0xFF2E7D32) else Color(0xFFD32F2F))
                         }
                         Spacer(modifier = Modifier.height(4.dp))
@@ -770,7 +773,6 @@ fun DashboardReportsTab(
                 }
             }
         } else {
-            // Donut Chart Canvas Native
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -826,7 +828,6 @@ fun DashboardReportsTab(
                 }
             }
 
-            // DAFTAR PLAFON BUDGET PER KATEGORI (ACTUAL VS BUDGET)
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -911,7 +912,6 @@ fun DashboardReportsTab(
         }
     }
 
-    // Modal Bottom Sheet Drill-down Rincian Kategori
     if (selectedCategoryForDetail != null) {
         val categoryName = selectedCategoryForDetail!!
         val categoryInfo = getCategoryInfo(categoryName)
@@ -986,7 +986,6 @@ fun DashboardReportsTab(
         }
     }
 
-    // Dialog Pengaturan Plafon Anggaran per Kategori
     if (categoryForBudgetDialog != null) {
         val cat = categoryForBudgetDialog!!
         var budgetInput by remember(cat) {
@@ -1066,7 +1065,7 @@ fun DashboardReportsTab(
 }
 
 // -------------------------------------------------------------------------------------
-// 2. TAB CATAT & RIWAYAT TRANSAKSI (DILENGKAPI KATEGORI TRAVELING)
+// 2. TAB CATAT & RIWAYAT TRANSAKSI
 // -------------------------------------------------------------------------------------
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -1483,7 +1482,7 @@ fun RecordAndHistoryTab(
 }
 
 // -------------------------------------------------------------------------------------
-// 3. TAB TAGIHAN RUTIN: PELACAK PENGELUARAN PASTI (INTERNET, LISTRIK, SHOPEEPAYLATER)
+// 3. TAB TAGIHAN RUTIN DENGAN FITUR "BATAL BAYAR (UNDO)"
 // -------------------------------------------------------------------------------------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1492,11 +1491,13 @@ fun RecurringBillsTab(
     onAddBill: (String, Double, String, Int) -> Unit,
     onUpdateBill: (RecurringBill) -> Unit,
     onDeleteBill: (RecurringBill) -> Unit,
-    onPayBill: (RecurringBill) -> Unit
+    onPayBill: (RecurringBill) -> Unit,
+    onUndoPayBill: (RecurringBill) -> Unit
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
     var billToEdit by remember { mutableStateOf<RecurringBill?>(null) }
     var billToDelete by remember { mutableStateOf<RecurringBill?>(null) }
+    var billToUndo by remember { mutableStateOf<RecurringBill?>(null) }
 
     val currentMonthYear = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
     val totalObligation = recurringBills.sumOf { it.amount }
@@ -1525,7 +1526,6 @@ fun RecurringBillsTab(
                 Text("Pantau jatuh tempo langganan, cicilan, dan utilitas", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
             }
 
-            // Kartu Ringkasan Beban Rutin
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -1612,7 +1612,17 @@ fun RecurringBillsTab(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Lunas Bulan Ini", style = MaterialTheme.typography.labelSmall, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                                        Text("Lunas", style = MaterialTheme.typography.labelSmall, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        // Opsi Undo / Batal Bayar & Catat
+                                        TextButton(
+                                            onClick = { billToUndo = bill },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Icon(Icons.Default.Undo, contentDescription = "Batalkan", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Batal Bayar", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                                        }
                                     }
                                 } else {
                                     Button(
@@ -1670,6 +1680,34 @@ fun RecurringBillsTab(
                 onConfirm = { name, amt, cat, day ->
                     onUpdateBill(b.copy(title = name, amount = amt, category = cat, dueDay = day))
                     billToEdit = null
+                }
+            )
+        }
+
+        // Dialog Konfirmasi Batalkan Pembayaran (Undo)
+        if (billToUndo != null) {
+            val b = billToUndo!!
+            AlertDialog(
+                onDismissRequest = { billToUndo = null },
+                title = { Text("Batalkan Pembayaran?") },
+                text = {
+                    Text("Status lunas pada '${b.title}' akan dikembalikan ke belum dibayar, dan catatan pengeluaran sebesar ${formatRupiah(b.amount)} akan dihapus dari riwayat transaksi.")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            onUndoPayBill(b)
+                            billToUndo = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Ya, Batalkan")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { billToUndo = null }) {
+                        Text("Kembali")
+                    }
                 }
             )
         }
@@ -1867,7 +1905,7 @@ fun getCategoryInfo(category: String): CategoryInfo {
         "Investment" -> CategoryInfo(category, Icons.Default.TrendingUp, Color(0xFF2E7D32))
         "Debt" -> CategoryInfo(category, Icons.Default.CreditCard, Color(0xFFD32F2F))
         "Gifts" -> CategoryInfo(category, Icons.Default.CardGiftcard, Color(0xFFE91E63))
-        "Traveling" -> CategoryInfo(category, Icons.Default.Flight, Color(0xFF00897B)) // Kategori Traveling
+        "Traveling" -> CategoryInfo(category, Icons.Default.Flight, Color(0xFF00897B))
         else -> CategoryInfo(category, Icons.Default.ReceiptLong, Color(0xFF607D8B))
     }
 }
