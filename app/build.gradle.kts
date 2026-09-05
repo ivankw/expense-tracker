@@ -13,6 +13,7 @@ android {
         minSdk = 31
         targetSdk = 34
 
+        // Mengambil versi dinamis dari CI/CD GitHub Actions
         val passedVersionCode = project.findProperty("customVersionCode")?.toString()?.toIntOrNull() ?: 1
         val passedVersionName = project.findProperty("customVersionName")?.toString() ?: "1.0.0"
 
@@ -27,10 +28,12 @@ android {
 
     signingConfigs {
         create("releaseKey") {
-            storeFile = file("${System.getProperty("user.home")}/release.keystore")
+            storeFile = file("${rootDir}/release.keystore")
             storePassword = "password123"
-            keyAlias = "releasealias"
+            keyAlias = "mykey"
             keyPassword = "password123"
+            enableV1Signing = true
+            enableV2Signing = true
         }
     }
 
@@ -41,6 +44,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("releaseKey")
+        }
+        debug {
             signingConfig = signingConfigs.getByName("releaseKey")
         }
     }
@@ -74,9 +80,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
 
-    // Jetpack DataStore Preferences (Solusi Unresolved Reference datastore)
-    implementation("androidx.datastore:datastore-preferences:1.0.0")
-
     // Jetpack Compose
     val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
     implementation(composeBom)
@@ -93,7 +96,7 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     kapt("androidx.room:room-compiler:$roomVersion")
 
-    // Network (OkHttp)
+    // Network (OkHttp) & Coroutines
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
 }
