@@ -26,19 +26,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.pengeluaran.data.BudgetPreferences
 import com.example.pengeluaran.data.Expense
 import com.example.pengeluaran.util.ApkDownloader
 import com.example.pengeluaran.util.UpdateChecker
 import com.example.pengeluaran.util.UpdateResult
 import com.example.pengeluaran.util.UpdateStatus
 import com.example.pengeluaran.viewmodel.ExpenseViewModel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
@@ -68,8 +69,9 @@ class MainActivity : ComponentActivity() {
 fun ExpenseScreen(viewModel: ExpenseViewModel) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val budgetPrefs = remember { com.example.pengeluaran.data.BudgetPreferences(context) }
+    val budgetPrefs = remember { BudgetPreferences(context) }
 
+    // Daftar Kategori lengkap dengan Traveling
     val categoryList = remember {
         listOf(
             "Debt",
@@ -84,26 +86,26 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
         )
     }
 
-    // State transaksi
+    // State untuk form input transaksi
     val expenseList by viewModel.expenses.collectAsState()
     var title by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(categoryList[1]) }
     var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
 
-    // State Budget Tersimpan
+    // State untuk Dashboard Keuangan (Terhubung ke DataStore)
     var paycheckInput by remember { mutableStateOf("4000000") }
-    val plannedBudgets = remember { mutableStateMapOf<String, String>() }
-
-    // Baca data tersimpan saat pertama kali dibuka
-    LaunchedEffect(Unit) {
-        // Ambil Paycheck tersimpan
-        budgetPrefs.paycheckFlow.collect { savedPaycheck ->
-            paycheckInput = savedPaycheck.toLong().toString()
+    val plannedBudgets = remember {
+        mutableStateMapOf<String, String>().apply {
+            categoryList.forEach { put(it, "0") }
         }
     }
 
+    // Memuat data Paycheck dan Planned Budget tersimpan dari DataStore
     LaunchedEffect(Unit) {
+        val savedPaycheck = budgetPrefs.paycheckFlow.first()
+        paycheckInput = savedPaycheck.toLong().toString()
+
         categoryList.forEach { cat ->
             val defaultVal = when (cat) {
                 "Debt" -> 2000000.0
@@ -112,39 +114,8 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
                 "Electricity" -> 200000.0
                 else -> 0.0
             }
-            budgetPrefs.getPlannedBudgetFlow(cat, defaultVal).collect { savedAmount ->
-                plannedBudgets[cat] = savedAmount.toLong().toString()
-            }
-        }
-    }
-
-    // Kalkulasi Angka
-    val paycheck = paycheckInput.toDoubleOrNull() ?: 0.0
-    val totalPlanned = categoryList.sumOf { plannedBudgets[it]?.toDoubleOrNull() ?: 0.0 }
-    val totalActual = expenseList.sumOf { it.amount }
-    val totalSaving = paycheck - totalActual
-    val totalRemain = totalPlanned - totalActual
-
-    // State untuk form input transaksi
-    val expenseList by viewModel.expenses.collectAsState()
-    var title by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf(categoryList[1]) }
-    var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
-
-    // State untuk Dashboard Keuangan
-    var paycheckInput by remember { mutableStateOf("4000000") }
-    val plannedBudgets = remember {
-        mutableStateMapOf<String, String>().apply {
-            put("Debt", "2000000")
-            put("Food", "658000")
-            put("Gifts", "0")
-            put("Home", "0")
-            put("Transportation/gas", "493500")
-            put("Electricity", "200000")
-            put("Ecommerce", "0")
-            put("Investment", "0")
-            put("Traveling", "0")
+            val savedAmount = budgetPrefs.getPlannedBudgetFlow(cat, defaultVal).first()
+            plannedBudgets[cat] = savedAmount.toLong().toString()
         }
     }
 
@@ -254,7 +225,12 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
                             Text("Paycheck  ", fontWeight = FontWeight.Bold, color = Color(0xFF1A365D))
                             BasicNumberField(
                                 value = paycheckInput,
-                                onValueChange = { paycheckInput = it },
+                                onValueChange = { input ->
+                                    paycheckInput = input
+                                    coroutineScope.launch {
+                                        budgetPrefs.savePaycheck(input.toDoubleOrNull() ?: 0.0)
+                                    }
+                                },
                                 modifier = Modifier.width(130.dp)
                             )
                         }
@@ -280,7 +256,6 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
                     )
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    // Progress Planned vs Actual
                     val maxProgress = maxOf(totalPlanned, totalActual, 1.0)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Planned", modifier = Modifier.width(70.dp), fontWeight = FontWeight.SemiBold)
@@ -385,11 +360,16 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
                                 fontWeight = FontWeight.Medium
                             )
 
-                            // Editable Planned TextField
+                            // Editable Planned TextField dengan penyimpanan otomatis
                             Box(modifier = Modifier.weight(1.2f), contentAlignment = Alignment.CenterEnd) {
                                 BasicNumberField(
                                     value = plannedBudgets[category] ?: "0",
-                                    onValueChange = { plannedBudgets[category] = it },
+                                    onValueChange = { input ->
+                                        plannedBudgets[category] = input
+                                        coroutineScope.launch {
+                                            budgetPrefs.savePlannedBudget(category, input.toDoubleOrNull() ?: 0.0)
+                                        }
+                                    },
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
@@ -587,7 +567,6 @@ fun ExpenseScreen(viewModel: ExpenseViewModel) {
     }
 }
 
-// Widget Input Angka Ringkas untuk Kolom Planned dan Paycheck
 @Composable
 fun BasicNumberField(
     value: String,
