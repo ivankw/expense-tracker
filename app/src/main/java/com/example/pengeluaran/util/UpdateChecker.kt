@@ -2,129 +2,129 @@ package com.example.pengeluaran.util
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 
 enum class UpdateStatus {
-    HAS_UPDATE,     // Ada versi yang lebih tinggi di repo
-    UP_TO_DATE,     // Versi lokal sama persis dengan yang ada di repo
-    ERROR           // Gagal terhubung/akses API repo
+    HAS_UPDATE,
+    UP_TO_DATE,
+    ERROR
 }
 
 data class UpdateResult(
     val status: UpdateStatus,
     val currentVersion: String,
-    val latestVersion: String = "",
-    val releaseNotes: String = "",
-    val downloadUrl: String = "",
-    val errorMessage: String = ""
+    val latestVersion: String,
+    val downloadUrl: String? = null,
+    val releaseNotes: String? = null,
+    val errorMessage: String? = null
 )
 
 object UpdateChecker {
-    // SESUAIKAN DENGAN USERNAME DAN REPO GITHUB ANDA
-    private const val GITHUB_OWNER = "ivankw"
-    private const val GITHUB_REPO = "expense-tracker"
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .build()
 
-    private val client = OkHttpClient()
+    // Sesuaikan format: "username_github/nama_repo" (contoh: "octocat/expense-tracker")
+    var githubRepoPath: String = "expense-tracker/expense-tracker"
 
     fun getCurrentVersion(context: Context): String {
         return try {
-            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
             packageInfo.versionName ?: "1.0.0"
-        } catch (e: PackageManager.NameNotFoundException) {
+        } catch (_: Exception) {
             "1.0.0"
         }
     }
 
     suspend fun checkRelease(context: Context): UpdateResult = withContext(Dispatchers.IO) {
-        val currentVerRaw = getCurrentVersion(context).trim()
-        val currentVerClean = currentVerRaw.removePrefix("v")
-        val url = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
-
-        val request = Request.Builder()
-            .url(url)
-            .header("Accept", "application/vnd.github.v3+json")
-            .build()
-
+        val currentVer = getCurrentVersion(context)
         try {
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    return@withContext UpdateResult(
-                        status = UpdateStatus.ERROR,
-                        currentVersion = currentVerRaw,
-                        errorMessage = "Gagal mengambil data dari GitHub (${response.code})"
-                    )
-                }
+            val url = "https://api.github.com/repos/$githubRepoPath/releases/latest"
+            val request = Request.Builder()
+                .url(url)
+                .header("Accept", "application/vnd.github.v3+json")
+                .build()
 
-                val body = response.body?.string() ?: return@withContext UpdateResult(
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                return@withContext UpdateResult(
                     status = UpdateStatus.ERROR,
-                    currentVersion = currentVerRaw,
-                    errorMessage = "Data rilis kosong"
+                    currentVersion = currentVer,
+                    latestVersion = currentVer,
+                    errorMessage = "HTTP ${response.code}: ${response.message}"
                 )
+            }
 
-                val json = JSONObject(body)
-                val latestTagRaw = json.optString("tag_name", "").trim()
-                val latestVerClean = latestTagRaw.removePrefix("v")
-                val releaseNotes = json.optString("body", "Pembaruan rutin aplikasi.")
+            val bodyString: String = response.body?.string().orEmpty()
+            if (bodyString.isBlank()) {
+                return@withContext UpdateResult(
+                    status = UpdateStatus.ERROR,
+                    currentVersion = currentVer,
+                    latestVersion = currentVer,
+                    errorMessage = "Respon server kosong"
+                )
+            }
 
-                // Ambil tautan unduh APK
-                var apkUrl = json.optString("html_url", "")
-                val assets = json.optJSONArray("assets")
-                if (assets != null && assets.length() > 0) {
-                    for (i in 0 until assets.length()) {
-                        val asset = assets.getJSONObject(i)
-                        val name = asset.optString("name", "")
-                        if (name.endsWith(".apk", ignoreCase = true)) {
-                            apkUrl = asset.optString("browser_download_url", apkUrl)
-                            break
-                        }
+            val jsonObject = JSONObject(bodyString)
+            val tagName = jsonObject.optString("tag_name", "").trim()
+            val releaseNotes = jsonObject.optString("body", "-")
+            val latestVer = tagName.removePrefix("v")
+
+            var downloadUrl: String? = null
+            val assets = jsonObject.optJSONArray("assets")
+            if (assets != null) {
+                for (i in 0 until assets.length()) {
+                    val asset = assets.getJSONObject(i)
+                    val name = asset.optString("name", "")
+                    if (name.endsWith(".apk")) {
+                        downloadUrl = asset.optString("browser_download_url", null)
+                        break
                     }
                 }
-
-                // Logika pencocokan versi
-                val diff = compareVersions(latestVerClean, currentVerClean)
-                when {
-                    diff > 0 -> UpdateResult(
-                        status = UpdateStatus.HAS_UPDATE,
-                        currentVersion = currentVerRaw,
-                        latestVersion = latestTagRaw,
-                        releaseNotes = releaseNotes,
-                        downloadUrl = apkUrl
-                    )
-                    else -> UpdateResult(
-                        status = UpdateStatus.UP_TO_DATE,
-                        currentVersion = currentVerRaw,
-                        latestVersion = latestTagRaw
-                    )
-                }
             }
+
+            val hasUpdate = isNewerVersion(currentVer, latestVer)
+
+            UpdateResult(
+                status = if (hasUpdate) UpdateStatus.HAS_UPDATE else UpdateStatus.UP_TO_DATE,
+                currentVersion = currentVer,
+                latestVersion = tagName.ifBlank { latestVer },
+                downloadUrl = downloadUrl,
+                releaseNotes = releaseNotes
+            )
         } catch (e: Exception) {
             UpdateResult(
                 status = UpdateStatus.ERROR,
-                currentVersion = currentVerRaw,
-                errorMessage = e.localizedMessage ?: "Tidak dapat terhubung ke server"
+                currentVersion = currentVer,
+                latestVersion = currentVer,
+                errorMessage = e.localizedMessage ?: "Gagal terhubung ke server"
             )
         }
     }
 
-    /**
-     * Membandingkan dua semver string.
-     * Mengembalikan 1 jika v1 > v2, -1 jika v1 < v2, dan 0 jika v1 == v2
-     */
-    private fun compareVersions(v1: String, v2: String): Int {
-        val parts1 = v1.split(".").map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
-        val parts2 = v2.split(".").map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
-
-        val length = maxOf(parts1.size, parts2.size)
-        for (i in 0 until length) {
-            val num1 = parts1.getOrElse(i) { 0 }
-            val num2 = parts2.getOrElse(i) { 0 }
-            if (num1 > num2) return 1
-            if (num1 < num2) return -1
+    private fun isNewerVersion(current: String, latest: String): Boolean {
+        if (current == latest || latest.isBlank()) return false
+        val currentParts = current.removePrefix("v").split(".").mapNotNull { it.toIntOrNull() }
+        val latestParts = latest.removePrefix("v").split(".").mapNotNull { it.toIntOrNull() }
+        val maxLen = maxOf(currentParts.size, latestParts.size)
+        for (i in 0 until maxLen) {
+            val c = currentParts.getOrElse(i) { 0 }
+            val l = latestParts.getOrElse(i) { 0 }
+            if (l > c) return true
+            if (l < c) return false
         }
-        return 0
+        return false
     }
 }
