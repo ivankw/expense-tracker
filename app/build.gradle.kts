@@ -12,8 +12,10 @@ android {
         applicationId = "com.example.pengeluaran"
         minSdk = 31
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 1 // <-- NAIKKAN JADI 2, 3, DST SETIAP RILIS BARU
+        versionName = "1.0.0" // <-- SESUAIKAN DENGAN TAG RELEASE
+        // ...
+    }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
