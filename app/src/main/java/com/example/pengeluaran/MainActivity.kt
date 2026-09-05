@@ -8,8 +8,6 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -69,19 +67,17 @@ fun MainApp(viewModel: ExpenseViewModel) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    // 0 = Tab Kiri (Catat Transaksi Pengeluaran), 1 = Tab Kanan (Dashboard / Spreadsheet)
+    // 0 = Catat Pengeluaran (Kiri), 1 = Dashboard Spreadsheet (Kanan)
     var selectedTab by remember { mutableIntStateOf(1) }
 
     val expenseList by viewModel.expenses.collectAsState()
 
-    // State Update
     var updateResult by remember { mutableStateOf<UpdateResult?>(null) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showUpToDateDialog by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     val currentVersion = remember { UpdateChecker.getCurrentVersion(context) }
 
-    // State Budget / Income
     var paycheckAmount by remember { mutableStateOf("4750000") }
     var savingAmount by remember { mutableStateOf("4750000") }
 
@@ -96,7 +92,6 @@ fun MainApp(viewModel: ExpenseViewModel) {
         "Investment"
     )
 
-    // Budget rencana per kategori (Planned)
     val plannedBudget = remember {
         mutableStateMapOf(
             "Debt" to 0.0,
@@ -206,7 +201,7 @@ fun MainApp(viewModel: ExpenseViewModel) {
             }
         }
 
-        // Dialog Pembaruan Tersedia (Bebas requestCode)
+        // Dialog Pembaruan
         if (showUpdateDialog && updateResult != null) {
             AlertDialog(
                 onDismissRequest = { showUpdateDialog = false },
@@ -244,7 +239,7 @@ fun MainApp(viewModel: ExpenseViewModel) {
             )
         }
 
-        // Dialog Versi Sudah Paling Baru
+        // Dialog Versi Sudah Terbaru
         if (showUpToDateDialog && updateResult != null) {
             AlertDialog(
                 onDismissRequest = { showUpToDateDialog = false },
@@ -266,9 +261,6 @@ fun MainApp(viewModel: ExpenseViewModel) {
     }
 }
 
-// -------------------------------------------------------------------------------------
-// 1. TAB KIRI: CATAT TRANSAKSI
-// -------------------------------------------------------------------------------------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordExpenseTab(
@@ -353,9 +345,6 @@ fun RecordExpenseTab(
     }
 }
 
-// -------------------------------------------------------------------------------------
-// 2. TAB KANAN: DASHBOARD (PERSONAL EXPENSES TRACKER SPREADSHEET)
-// -------------------------------------------------------------------------------------
 @Composable
 fun DashboardSpreadsheetTab(
     categories: List<String>,
@@ -376,7 +365,6 @@ fun DashboardSpreadsheetTab(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        // Judul Header Tracker Oranye
         Text(
             text = "PERSONAL EXPENSES TRACKER",
             color = Color(0xFFD35400),
@@ -385,7 +373,6 @@ fun DashboardSpreadsheetTab(
             modifier = Modifier.padding(bottom = 12.dp)
         )
 
-        // Section Income
         Text("Income:", fontWeight = FontWeight.Bold, fontSize = 15.sp)
         Spacer(modifier = Modifier.height(4.dp))
         Row(
@@ -414,7 +401,6 @@ fun DashboardSpreadsheetTab(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Section Expenses (Planned vs Actual)
         Text("Expenses:", fontWeight = FontWeight.Bold, fontSize = 15.sp)
         Spacer(modifier = Modifier.height(6.dp))
         Row(
@@ -427,7 +413,6 @@ fun DashboardSpreadsheetTab(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Header Tabel Kategori
         Text(
             text = "Expenses Table",
             color = Color(0xFFD35400),
@@ -436,7 +421,6 @@ fun DashboardSpreadsheetTab(
         )
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Header Grid
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -450,7 +434,6 @@ fun DashboardSpreadsheetTab(
             Text("%", fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
         }
 
-        // Rows Kategori
         categories.forEach { cat ->
             val actualCat = expenses.filter { it.category.equals(cat, ignoreCase = true) }.sumOf { it.amount }
             val plannedCat = plannedBudget[cat] ?: 0.0
@@ -498,7 +481,6 @@ fun DashboardSpreadsheetTab(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Histori Detail Transaksi
         Text(
             text = "Histori Transaksi (${expenses.size})",
             fontWeight = FontWeight.Bold,
@@ -534,7 +516,7 @@ fun ExpenseItemRow(expense: Expense, onDelete: () -> Unit) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(expense.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Text("${expense.category} • $dateString", fontSize = 11.sp, color = Color.Gray)
+                Text("${expense.category} •$dateString", fontSize = 11.sp, color = Color.Gray)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -551,7 +533,6 @@ fun ExpenseItemRow(expense: Expense, onDelete: () -> Unit) {
     }
 }
 
-// Format Rupiah tanpa sen
 fun formatRupiah(number: Double): String {
     val symbols = DecimalFormatSymbols(Locale("in", "ID")).apply {
         currencySymbol = "Rp "
