@@ -20,6 +20,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -66,14 +67,17 @@ fun MainScreen(viewModel: ExpenseViewModel) {
 
     val expenseList by viewModel.expenses.collectAsState()
 
-    // State update aplikasi
+    // Default Pemasukan/Income (Dapat disesuaikan atau dihubungkan ke preferences)
+    var incomeAmount by remember { mutableDoubleStateOf(4750000.0) }
+
+    // State Update Versi Aplikasi
     var updateResult by remember { mutableStateOf<UpdateResult?>(null) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showUpToDateDialog by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     val currentVersion = remember { UpdateChecker.getCurrentVersion(context) }
 
-    // Cek update otomatis saat aplikasi dibuka
+    // Cek versi otomatis saat aplikasi dijalankan
     LaunchedEffect(Unit) {
         val res = UpdateChecker.checkRelease(context)
         updateResult = res
@@ -107,7 +111,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
                             leadingIcon = { Icon(Icons.Default.SystemUpdate, contentDescription = null) },
                             onClick = {
                                 showMenu = false
-                                Toast.makeText(context, "Memeriksa versi di repo...", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Memeriksa versi di repository...", Toast.LENGTH_SHORT).show()
                                 coroutineScope.launch {
                                     val res = UpdateChecker.checkRelease(context)
                                     updateResult = res
@@ -154,24 +158,25 @@ fun MainScreen(viewModel: ExpenseViewModel) {
                 .padding(paddingValues)
         ) {
             if (selectedTab == 0) {
-                // Tampilan Kiri
+                // Tampilan Menu Kiri: Form Catat Pengeluaran
                 RecordExpenseTab(
                     onSaveExpense = { title, amount, category ->
                         viewModel.addExpense(title, amount, category)
-                        Toast.makeText(context, "Transaksi berhasil dicatat!", Toast.LENGTH_SHORT).show()
-                        selectedTab = 1 // Otomatis pindah ke Dashboard setelah simpan
+                        Toast.makeText(context, "Transaksi berhasil disimpan!", Toast.LENGTH_SHORT).show()
+                        selectedTab = 1 // Pindah otomatis ke Dashboard untuk melihat ringkasan
                     }
                 )
             } else {
-                // Tampilan Kanan
+                // Tampilan Menu Kanan: Dashboard Ringkasan & Histori
                 DashboardTab(
                     expenses = expenseList,
+                    incomeAmount = incomeAmount,
                     onDelete = { viewModel.deleteExpense(it) }
                 )
             }
         }
 
-        // Dialog Pembaruan Tersedia
+        // Dialog Notifikasi Update Tersedia
         if (showUpdateDialog && updateResult != null) {
             AlertDialog(
                 onDismissRequest = { showUpdateDialog = false },
@@ -195,6 +200,8 @@ fun MainScreen(viewModel: ExpenseViewModel) {
                                     downloadUrl = downloadUrl,
                                     fileName = "ExpenseTracker-${updateResult?.latestVersion}.apk"
                                 )
+                            } else {
+                                Toast.makeText(context, "URL file APK tidak ditemukan di rilis.", Toast.LENGTH_SHORT).show()
                             }
                         }
                     ) {
@@ -209,7 +216,7 @@ fun MainScreen(viewModel: ExpenseViewModel) {
             )
         }
 
-        // Dialog Aplikasi Sudah Terbaru
+        // Dialog Versi Sudah Paling Baru
         if (showUpToDateDialog && updateResult != null) {
             AlertDialog(
                 onDismissRequest = { showUpToDateDialog = false },
@@ -231,9 +238,9 @@ fun MainScreen(viewModel: ExpenseViewModel) {
     }
 }
 
-// -------------------------------------------------------------------------------------
-// 1. HALAMAN KIRI: CATAT TRANSAKSI PENGELUARAN
-// -------------------------------------------------------------------------------------
+// =====================================================================================
+// 1. MENU SEBELAH KIRI: FORM CATAT TRANSAKSI
+// =====================================================================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordExpenseTab(
@@ -267,7 +274,7 @@ fun RecordExpenseTab(
             fontWeight = FontWeight.Bold
         )
 
-        // Input Nama Pengeluaran
+        // Input Judul Pengeluaran
         OutlinedTextField(
             value = title,
             onValueChange = { title = it },
@@ -275,7 +282,7 @@ fun RecordExpenseTab(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Input Jumlah (Hanya Angka)
+        // Input Nominal (Keyboard Numerik Murni)
         OutlinedTextField(
             value = amount,
             onValueChange = { input ->
@@ -289,7 +296,7 @@ fun RecordExpenseTab(
             modifier = Modifier.fillMaxWidth()
         )
 
-        // Dropdown Pilihan Kategori
+        // Dropdown Menu Kategori
         ExposedDropdownMenuBox(
             expanded = isCategoryExpanded,
             onExpandedChange = { isCategoryExpanded = !isCategoryExpanded },
@@ -344,33 +351,103 @@ fun RecordExpenseTab(
     }
 }
 
-// -------------------------------------------------------------------------------------
-// 2. HALAMAN KANAN: DASHBOARD
-// -------------------------------------------------------------------------------------
+// =====================================================================================
+// 2. MENU SEBELAH KANAN: DASHBOARD FINANSIAL & HISTORI
+// =====================================================================================
 @Composable
 fun DashboardTab(
     expenses: List<Expense>,
+    incomeAmount: Double,
     onDelete: (Expense) -> Unit
 ) {
     val totalExpense = expenses.sumOf { it.amount }
+    val remainingBudget = incomeAmount - totalExpense
+    val expenseRatio = if (incomeAmount > 0) (totalExpense / incomeAmount).toFloat().coerceIn(0f, 1f) else 0f
+
+    // Evaluasi Status Saldo & Warna
+    val (statusText, statusColor) = when {
+        remainingBudget < 0 -> Pair("Defisit (Overbudget)", Color(0xFFD32F2F))
+        remainingBudget < (incomeAmount * 0.2) -> Pair("Hati-hati (Sisa < 20%)", Color(0xFFF57C00))
+        else -> Pair("Aman (Surplus)", Color(0xFF388E3C))
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // Card Total Pengeluaran
+        // KARTU RINGKASAN FINANSIAL
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text("Total Pengeluaran Keseluruhan", style = MaterialTheme.typography.labelMedium)
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Baris Pemasukan
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Total Pemasukan:", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        formatRupiah(incomeAmount),
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = formatRupiah(totalExpense),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
+
+                // Baris Pengeluaran
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Total Pengeluaran:", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        formatRupiah(totalExpense),
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+
+                // Baris Sisa Saldo / Tabungan
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Sisa Saldo (Tabungan):", style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            statusText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = statusColor,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        formatRupiah(remainingBudget),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = statusColor
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Bar Visual Progress Pengeluaran vs Budget
+                LinearProgressIndicator(
+                    progress = { expenseRatio },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp),
+                    color = if (expenseRatio >= 0.8f) Color(0xFFD32F2F) else MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             }
         }
@@ -382,8 +459,9 @@ fun DashboardTab(
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
+        // Daftar Item Histori
         if (expenses.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -412,7 +490,9 @@ fun DashboardTab(
     }
 }
 
-// Komponen Baris Item Transaksi
+// =====================================================================================
+// KOMPONEN ITEM HISTORI TRANSAKSI
+// =====================================================================================
 @Composable
 fun ExpenseItem(expense: Expense, onDelete: () -> Unit) {
     val dateString = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(expense.date))
@@ -445,7 +525,9 @@ fun ExpenseItem(expense: Expense, onDelete: () -> Unit) {
     }
 }
 
-// Format Rupiah: "Rp 7.000" tanpa desimal ",00"
+// =====================================================================================
+// FORMATTER RUPIAH ("Rp 7.000" TANPA ",00")
+// =====================================================================================
 fun formatRupiah(number: Double): String {
     val symbols = DecimalFormatSymbols(Locale("in", "ID")).apply {
         currencySymbol = "Rp "
