@@ -13,7 +13,6 @@ android {
         minSdk = 26
         targetSdk = 35
 
-        // Mengambil versi dinamis dari CI/CD GitHub Actions atau default ke v1.0.0
         versionCode = project.findProperty("customVersionCode")?.toString()?.toIntOrNull() ?: 1
         versionName = project.findProperty("customVersionName")?.toString() ?: "1.0.0"
 
@@ -22,8 +21,6 @@ android {
             useSupportLibrary = true
         }
 
-        // Membatasi build hanya untuk arsitektur 64-bit HP modern (arm64-v8a)
-        // Memangkas ukuran APK hingga ~60-70% karena menghapus binary x86, x86_64, dan armeabi-v7a
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
@@ -43,17 +40,12 @@ android {
 
     buildTypes {
         release {
-            // Mengaktifkan penghapusan kode mati & obfuscation R8
             isMinifyEnabled = true
-
-            // Menghapus resource gambar/XML yang tidak terpakai
             isShrinkResources = true
-
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-
             signingConfig = signingConfigs.getByName("release")
         }
         debug {
@@ -87,12 +79,10 @@ android {
 }
 
 dependencies {
-    // AndroidX Core & Lifecycle
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
 
-    // Jetpack Compose BOM & Material 3
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
@@ -100,18 +90,23 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
 
-    // Room Database (SQLite Engine)
+    // Room Database
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
-    // DataStore Preferences (Income Storage)
+    // DataStore Preferences
     implementation(libs.androidx.datastore.preferences)
 
-    // Kotlin Coroutines
+    // Coroutines
     implementation(libs.kotlinx.coroutines.android)
 
-    // Debugging Tooling
+    // Biometric Authentication (Fingerprint / Face Unlock)
+    implementation("androidx.biometric:biometric:1.2.0-alpha05")
+
+    // WorkManager (Background Scheduling & Notifications)
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }
