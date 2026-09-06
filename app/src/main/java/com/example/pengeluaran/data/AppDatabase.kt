@@ -4,11 +4,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [
-        Expense::class,
-        RecurringBill::class,
-        CategoryBudget::class
-    ],
+    entities = [Expense::class, RecurringBill::class, CategoryBudget::class],
     version = 2,
     exportSchema = false
 )
