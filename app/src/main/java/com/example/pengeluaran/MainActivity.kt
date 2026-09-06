@@ -8,6 +8,8 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -18,6 +20,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.pengeluaran.data.Expense
+import com.example.pengeluaran.data.RecurringBill
 import com.example.pengeluaran.util.ApkDownloader
 import com.example.pengeluaran.util.UpdateChecker
 import com.example.pengeluaran.util.UpdateResult
@@ -49,7 +53,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            // Mengunci tema selalu Light Theme
+            MaterialTheme(colorScheme = lightColorScheme()) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -67,17 +72,20 @@ fun MainApp(viewModel: ExpenseViewModel) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    // 0 = Catat Pengeluaran (Kiri), 1 = Dashboard Spreadsheet (Kanan)
-    var selectedTab by remember { mutableIntStateOf(1) }
+    // 0 = Catat Pengeluaran, 1 = Tagihan Rutin, 2 = Dashboard Spreadsheet
+    var selectedTab by remember { mutableIntStateOf(2) }
 
     val expenseList by viewModel.expenses.collectAsState()
+    val billsList by viewModel.recurringBills.collectAsState()
 
+    // State Auto Update
     var updateResult by remember { mutableStateOf<UpdateResult?>(null) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showUpToDateDialog by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     val currentVersion = remember { UpdateChecker.getCurrentVersion(context) }
 
+    // Budget Plan & Income Spreadsheet
     var paycheckAmount by remember { mutableStateOf("4750000") }
     var savingAmount by remember { mutableStateOf("4750000") }
 
@@ -162,11 +170,17 @@ fun MainApp(viewModel: ExpenseViewModel) {
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
                     icon = { Icon(Icons.Default.AddCircle, contentDescription = null) },
-                    label = { Text("Catat Pengeluaran") }
+                    label = { Text("Pengeluaran") }
                 )
                 NavigationBarItem(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
+                    icon = { Icon(Icons.Default.ReceiptLong, contentDescription = null) },
+                    label = { Text("Tagihan") }
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
                     icon = { Icon(Icons.Default.Dashboard, contentDescription = null) },
                     label = { Text("Dashboard") }
                 )
@@ -178,30 +192,49 @@ fun MainApp(viewModel: ExpenseViewModel) {
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            if (selectedTab == 0) {
-                RecordExpenseTab(
-                    categoryList = categories,
-                    onSaveExpense = { title, amount, cat ->
-                        viewModel.addExpense(title, amount, cat)
-                        Toast.makeText(context, "Pengeluaran tersimpan!", Toast.LENGTH_SHORT).show()
-                        selectedTab = 1
-                    }
-                )
-            } else {
-                DashboardSpreadsheetTab(
-                    categories = categories,
-                    expenses = expenseList,
-                    paycheckAmount = paycheckAmount,
-                    onPaycheckChange = { paycheckAmount = it },
-                    savingAmount = savingAmount,
-                    onSavingChange = { savingAmount = it },
-                    plannedBudget = plannedBudget,
-                    onDeleteExpense = { viewModel.deleteExpense(it) }
-                )
+            when (selectedTab) {
+                0 -> {
+                    RecordExpenseTab(
+                        categoryList = categories,
+                        onSaveExpense = { title, amount, cat ->
+                            viewModel.addExpense(title, amount, cat)
+                            Toast.makeText(context, "Pengeluaran tersimpan!", Toast.LENGTH_SHORT).show()
+                            selectedTab = 2
+                        }
+                    )
+                }
+                1 -> {
+                    BillsTab(
+                        bills = billsList,
+                        categoryList = categories,
+                        onAddBill = { name, amount, dueDay, cat ->
+                            viewModel.addRecurringBill(name, amount, dueDay, cat)
+                            Toast.makeText(context, "Tagihan ditambahkan!", Toast.LENGTH_SHORT).show()
+                        },
+                        onTogglePaid = { bill ->
+                            viewModel.toggleBillPaidStatus(bill)
+                        },
+                        onDeleteBill = { bill ->
+                            viewModel.deleteRecurringBill(bill)
+                        }
+                    )
+                }
+                2 -> {
+                    DashboardSpreadsheetTab(
+                        categories = categories,
+                        expenses = expenseList,
+                        paycheckAmount = paycheckAmount,
+                        onPaycheckChange = { paycheckAmount = it },
+                        savingAmount = savingAmount,
+                        onSavingChange = { savingAmount = it },
+                        plannedBudget = plannedBudget,
+                        onDeleteExpense = { viewModel.deleteExpense(it) }
+                    )
+                }
             }
         }
 
-        // Dialog Pembaruan
+        // Dialog Pembaruan Tersedia
         if (showUpdateDialog && updateResult != null) {
             AlertDialog(
                 onDismissRequest = { showUpdateDialog = false },
@@ -239,7 +272,7 @@ fun MainApp(viewModel: ExpenseViewModel) {
             )
         }
 
-        // Dialog Versi Sudah Terbaru
+        // Dialog Versi Terbaru
         if (showUpToDateDialog && updateResult != null) {
             AlertDialog(
                 onDismissRequest = { showUpToDateDialog = false },
@@ -261,6 +294,9 @@ fun MainApp(viewModel: ExpenseViewModel) {
     }
 }
 
+// -------------------------------------------------------------------------------------
+// 1. TAB PENGELUARAN HARIAN
+// -------------------------------------------------------------------------------------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordExpenseTab(
@@ -283,7 +319,7 @@ fun RecordExpenseTab(
         OutlinedTextField(
             value = title,
             onValueChange = { title = it },
-            label = { Text("Nama Pengeluaran (mis. Beli Token Listrik)") },
+            label = { Text("Nama Pengeluaran (mis. Makan Siang)") },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -340,11 +376,191 @@ fun RecordExpenseTab(
             },
             modifier = Modifier.fillMaxWidth().height(50.dp)
         ) {
-            Text("Simpan Transaksi", fontWeight = FontWeight.Bold)
+            Text("Simpan Pengeluaran", fontWeight = FontWeight.Bold)
         }
     }
 }
 
+// -------------------------------------------------------------------------------------
+// 2. TAB PENCATAT TAGIHAN RUTIN (RECURRING BILLS)
+// -------------------------------------------------------------------------------------
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BillsTab(
+    bills: List<RecurringBill>,
+    categoryList: List<String>,
+    onAddBill: (String, Double, Int, String) -> Unit,
+    onTogglePaid: (RecurringBill) -> Unit,
+    onDeleteBill: (RecurringBill) -> Unit
+) {
+    var billName by remember { mutableStateOf("") }
+    var billAmount by remember { mutableStateOf("") }
+    var dueDay by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf("Electricity") }
+    var isExpanded by remember { mutableStateOf(false) }
+
+    val totalUnpaid = bills.filter { !it.isPaidThisMonth }.sumOf { it.amount }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Text("Pencatat Tagihan Rutin", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Total Tagihan Belum Dibayar", style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        formatRupiah(totalUnpaid),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        OutlinedTextField(
+            value = billName,
+            onValueChange = { billName = it },
+            label = { Text("Nama Tagihan (mis. Wifi Indihome)") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = billAmount,
+                onValueChange = { if (it.all { c -> c.isDigit() }) billAmount = it },
+                label = { Text("Nominal (Rp)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                modifier = Modifier.weight(1.2f)
+            )
+            OutlinedTextField(
+                value = dueDay,
+                onValueChange = { input ->
+                    if (input.all { it.isDigit() } && (input.toIntOrNull() ?: 0) <= 31) dueDay = input
+                },
+                label = { Text("Tgl Jatuh Tempo") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        ExposedDropdownMenuBox(
+            expanded = isExpanded,
+            onExpandedChange = { isExpanded = !isExpanded },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            OutlinedTextField(
+                value = selectedCategory,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Kategori Alokasi") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isExpanded) },
+                modifier = Modifier.menuAnchor().fillMaxWidth()
+            )
+            ExposedDropdownMenu(
+                expanded = isExpanded,
+                onDismissRequest = { isExpanded = false }
+            ) {
+                categoryList.forEach { cat ->
+                    DropdownMenuItem(
+                        text = { Text(cat) },
+                        onClick = {
+                            selectedCategory = cat
+                            isExpanded = false
+                        }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Button(
+            onClick = {
+                val parsedAmount = billAmount.toDoubleOrNull() ?: 0.0
+                val parsedDay = dueDay.toIntOrNull() ?: 1
+                if (billName.isNotBlank() && parsedAmount > 0) {
+                    onAddBill(billName, parsedAmount, parsedDay, selectedCategory)
+                    billName = ""
+                    billAmount = ""
+                    dueDay = ""
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Tambah Tagihan")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text("Daftar Tagihan (${bills.size})", fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (bills.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
+                Text("Belum ada tagihan terdaftar", color = Color.Gray)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(bills, key = { it.id }) { bill ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (bill.isPaidThisMonth) Color(0xFFE8F5E9) else MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Checkbox(
+                                checked = bill.isPaidThisMonth,
+                                onCheckedChange = { onTogglePaid(bill) }
+                            )
+                            Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                                Text(bill.name, fontWeight = FontWeight.Bold)
+                                Text("${bill.category} • Jatuh Tempo tgl ${bill.dueDay}", fontSize = 12.sp, color = Color.DarkGray)
+                                Text(
+                                    formatRupiah(bill.amount),
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (bill.isPaidThisMonth) Color(0xFF2E7D32) else Color(0xFFC62828)
+                                )
+                            }
+                            IconButton(onClick = { onDeleteBill(bill) }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Hapus")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------
+// 3. TAB DASHBOARD SPREADSHEET (PERSONAL EXPENSES TRACKER)
+// -------------------------------------------------------------------------------------
 @Composable
 fun DashboardSpreadsheetTab(
     categories: List<String>,
@@ -421,6 +637,7 @@ fun DashboardSpreadsheetTab(
         )
         Spacer(modifier = Modifier.height(8.dp))
 
+        // Spreadsheet Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -434,6 +651,7 @@ fun DashboardSpreadsheetTab(
             Text("%", fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
         }
 
+        // Spreadsheet Data Rows
         categories.forEach { cat ->
             val actualCat = expenses.filter { it.category.equals(cat, ignoreCase = true) }.sumOf { it.amount }
             val plannedCat = plannedBudget[cat] ?: 0.0
@@ -516,7 +734,7 @@ fun ExpenseItemRow(expense: Expense, onDelete: () -> Unit) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(expense.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Text("${expense.category} •$dateString", fontSize = 11.sp, color = Color.Gray)
+                Text("${expense.category} • $dateString", fontSize = 11.sp, color = Color.Gray)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
