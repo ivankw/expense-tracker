@@ -19,18 +19,18 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         AppDatabase::class.java,
         "expense_database"
     )
-        .fallbackToDestructiveMigration() // Aman jika ada perubahan skema database
+        .fallbackToDestructiveMigration()
         .build()
 
     private val expenseDao = db.expenseDao()
-    private val recurringBillDao = db.recurringBillDao()
+    private val recurringDao = db.recurringDao()
 
-    // Flow Pengeluaran Harian
+    // Data Flow Pengeluaran Harian
     val expenses: StateFlow<List<Expense>> = expenseDao.getAllExpenses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Flow Tagihan Rutin
-    val recurringBills: StateFlow<List<RecurringBill>> = recurringBillDao.getAllRecurringBills()
+    // Data Flow Tagihan Rutin menggunakan RecurringDao
+    val recurringBills: StateFlow<List<RecurringBill>> = recurringDao.getAllRecurringBills()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun addExpense(title: String, amount: Double, category: String) {
@@ -52,10 +52,10 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Fungsi Tagihan Rutin yang dipanggil MainActivity
+    // Fungsi Tagihan Rutin yang diakses oleh MainActivity
     fun addRecurringBill(name: String, amount: Double, dueDay: Int, category: String) {
         viewModelScope.launch {
-            recurringBillDao.insertBill(
+            recurringDao.insertBill(
                 RecurringBill(
                     name = name,
                     amount = amount,
@@ -68,13 +68,13 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
 
     fun toggleBillPaidStatus(bill: RecurringBill) {
         viewModelScope.launch {
-            recurringBillDao.updateBill(bill.copy(isPaidThisMonth = !bill.isPaidThisMonth))
+            recurringDao.updateBill(bill.copy(isPaidThisMonth = !bill.isPaidThisMonth))
         }
     }
 
     fun deleteRecurringBill(bill: RecurringBill) {
         viewModelScope.launch {
-            recurringBillDao.deleteBill(bill)
+            recurringDao.deleteBill(bill)
         }
     }
 }
