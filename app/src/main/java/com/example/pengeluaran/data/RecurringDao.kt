@@ -6,14 +6,14 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface RecurringDao {
     @Query("SELECT * FROM recurring_bills ORDER BY dueDay ASC")
-    fun getAllRecurring(): Flow<List<RecurringBill>>
+    fun getAllRecurringBills(): Flow<List<RecurringBill>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertRecurring(bill: RecurringBill)
+    suspend fun insertBill(bill: RecurringBill)
 
     @Update
-    suspend fun updateRecurring(bill: RecurringBill)
+    suspend fun updateBill(bill: RecurringBill)
 
     @Delete
-    suspend fun deleteRecurring(bill: RecurringBill)
+    suspend fun deleteBill(bill: RecurringBill)
 }
