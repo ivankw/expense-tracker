@@ -4,11 +4,16 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [Expense::class, RecurringBill::class],
+    entities = [
+        Expense::class,
+        RecurringBill::class,
+        CategoryBudget::class
+    ],
     version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun expenseDao(): ExpenseDao
-    abstract fun recurringBillDao(): RecurringBillDao
+    abstract fun recurringDao(): RecurringDao
+    abstract fun categoryBudgetDao(): CategoryBudgetDao
 }
