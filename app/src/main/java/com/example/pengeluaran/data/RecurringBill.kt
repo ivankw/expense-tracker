@@ -7,9 +7,9 @@ import androidx.room.PrimaryKey
 data class RecurringBill(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
-    val title: String,
+    val name: String,
     val amount: Double,
-    val category: String,
-    val dueDay: Int, // Tanggal jatuh tempo (1 - 31)
-    val lastPaidMonthYear: String = "" // Format "yyyy-MM", menandai apakah sudah lunas bulan ini
+    val dueDay: Int,
+    val category: String = "Electricity",
+    val isPaidThisMonth: Boolean = false
 )
