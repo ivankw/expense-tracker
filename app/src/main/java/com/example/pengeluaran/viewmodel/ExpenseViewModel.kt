@@ -3,68 +3,46 @@ package com.example.pengeluaran.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.pengeluaran.data.*
+import androidx.room.Room
+import com.example.pengeluaran.data.AppDatabase
+import com.example.pengeluaran.data.Expense
+import com.example.pengeluaran.data.RecurringBill
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.*
 
 class ExpenseViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val db = AppDatabase.getDatabase(application)
-    private val expenseDao = db.expenseDao()
-    private val recurringDao = db.recurringDao()
-    private val categoryBudgetDao = db.categoryBudgetDao()
-    private val budgetPreferences = BudgetPreferences(application)
+    private val db = Room.databaseBuilder(
+        application,
+        AppDatabase::class.java,
+        "expense_database"
+    )
+        .fallbackToDestructiveMigration() // Aman jika ada perubahan skema database
+        .build()
 
+    private val expenseDao = db.expenseDao()
+    private val recurringBillDao = db.recurringBillDao()
+
+    // Flow Pengeluaran Harian
     val expenses: StateFlow<List<Expense>> = expenseDao.getAllExpenses()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val recurringBills: StateFlow<List<RecurringBill>> = recurringDao.getAllRecurring()
+    // Flow Tagihan Rutin
+    val recurringBills: StateFlow<List<RecurringBill>> = recurringBillDao.getAllRecurringBills()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val categoryBudgets: StateFlow<List<CategoryBudget>> = categoryBudgetDao.getAllBudgets()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val incomeFlow: StateFlow<Double> = budgetPreferences.incomeFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
-
-    val themeModeFlow: StateFlow<AppThemeMode> = budgetPreferences.themeModeFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppThemeMode.SYSTEM)
-
-    val biometricEnabledFlow: StateFlow<Boolean> = budgetPreferences.biometricEnabledFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
-    fun setBiometricEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            budgetPreferences.saveBiometricEnabled(enabled)
-        }
-    }
-
-    fun setThemeMode(mode: AppThemeMode) {
-        viewModelScope.launch {
-            budgetPreferences.saveThemeMode(mode)
-        }
-    }
-
-    fun addExpense(title: String, amount: Double, category: String, dateMillis: Long = System.currentTimeMillis()) {
+    fun addExpense(title: String, amount: Double, category: String) {
         viewModelScope.launch {
             expenseDao.insertExpense(
                 Expense(
                     title = title,
                     amount = amount,
                     category = category,
-                    date = dateMillis
+                    date = System.currentTimeMillis()
                 )
             )
-        }
-    }
-
-    fun updateExpense(expense: Expense) {
-        viewModelScope.launch {
-            expenseDao.updateExpense(expense)
         }
     }
 
@@ -74,70 +52,29 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun saveIncome(income: Double) {
+    // Fungsi Tagihan Rutin yang dipanggil MainActivity
+    fun addRecurringBill(name: String, amount: Double, dueDay: Int, category: String) {
         viewModelScope.launch {
-            budgetPreferences.saveIncome(income)
-        }
-    }
-
-    fun setCategoryBudget(category: String, limit: Double) {
-        viewModelScope.launch {
-            if (limit <= 0) {
-                categoryBudgetDao.deleteBudget(CategoryBudget(category, limit))
-            } else {
-                categoryBudgetDao.setBudget(CategoryBudget(category, limit))
-            }
-        }
-    }
-
-    fun addRecurringBill(title: String, amount: Double, category: String, dueDay: Int) {
-        viewModelScope.launch {
-            recurringDao.insertRecurring(
+            recurringBillDao.insertBill(
                 RecurringBill(
-                    title = title,
+                    name = name,
                     amount = amount,
-                    category = category,
-                    dueDay = dueDay
+                    dueDay = dueDay,
+                    category = category
                 )
             )
         }
     }
 
-    fun updateRecurringBill(bill: RecurringBill) {
+    fun toggleBillPaidStatus(bill: RecurringBill) {
         viewModelScope.launch {
-            recurringDao.updateRecurring(bill)
+            recurringBillDao.updateBill(bill.copy(isPaidThisMonth = !bill.isPaidThisMonth))
         }
     }
 
     fun deleteRecurringBill(bill: RecurringBill) {
         viewModelScope.launch {
-            recurringDao.deleteRecurring(bill)
-        }
-    }
-
-    fun payRecurringBill(bill: RecurringBill) {
-        viewModelScope.launch {
-            val currentMonthYear = SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date())
-            expenseDao.insertExpense(
-                Expense(
-                    title = "[Tagihan] ${bill.title}",
-                    amount = bill.amount,
-                    category = bill.category,
-                    date = System.currentTimeMillis()
-                )
-            )
-            recurringDao.updateRecurring(bill.copy(lastPaidMonthYear = currentMonthYear))
-        }
-    }
-
-    fun undoPayRecurringBill(bill: RecurringBill) {
-        viewModelScope.launch {
-            val targetTitle = "[Tagihan] ${bill.title}"
-            val existingExpense = expenseDao.getLatestExpenseByTitle(targetTitle)
-            if (existingExpense != null) {
-                expenseDao.deleteExpense(existingExpense)
-            }
-            recurringDao.updateRecurring(bill.copy(lastPaidMonthYear = ""))
+            recurringBillDao.deleteBill(bill)
         }
     }
 }
